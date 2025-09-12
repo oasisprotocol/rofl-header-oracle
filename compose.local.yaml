@@ -1,0 +1,29 @@
+services:
+  header-oracle:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/rube-de/rofl-header-oracle:latest
+    platform: linux/amd64
+    container_name: rofl_header_oracle
+    entrypoint: /bin/sh -c 'uv run python -m rofl_oracle --local --log-level DEBUG'
+    environment:
+      # Python configuration
+      PYTHONUNBUFFERED: 1  # Disable output buffering for immediate log visibility
+      
+      # Source chain configuration
+      SOURCE_RPC_URL: ${SOURCE_RPC_URL:-https://ethereum.publicnode.com}
+      SOURCE_CONTRACT_ADDRESS: ${SOURCE_CONTRACT_ADDRESS:-}  # Required - BlockHeaderRequester contract address
+      
+      # Target chain configuration
+      TARGET_RPC_URL: ${TARGET_RPC_URL:-https://testnet.sapphire.oasis.io}
+      CONTRACT_ADDRESS: ${CONTRACT_ADDRESS:-}  # Required - ROFLAdapter contract address
+      
+      # Oracle configuration
+      POLLING_INTERVAL: ${POLLING_INTERVAL:-12}  # Seconds between event checks
+      
+      # Local mode configuration (for testing without ROFL)
+      LOCAL_PRIVATE_KEY: ${LOCAL_PRIVATE_KEY:-}  # Required in local mode - private key for testing
+    
+    restart: on-failure
+    # Note: No ROFL socket volume mount needed in local mode
