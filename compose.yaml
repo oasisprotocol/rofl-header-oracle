@@ -1,0 +1,26 @@
+services:
+  header-oracle:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/rube-de/rofl-header-oracle:latest
+    platform: linux/amd64
+    container_name: rofl_header_oracle
+    environment:
+      # Python configuration
+      PYTHONUNBUFFERED: 1  # Disable output buffering for immediate log visibility
+      
+      # Source chain configuration
+      SOURCE_RPC_URL: ${SOURCE_RPC_URL:-https://ethereum.publicnode.com}
+      SOURCE_CONTRACT_ADDRESS: ${SOURCE_CONTRACT_ADDRESS:-}  # Required - BlockHeaderRequester contract address
+      
+      # Target chain configuration
+      TARGET_RPC_URL: ${TARGET_RPC_URL:-https://testnet.sapphire.oasis.io}
+      CONTRACT_ADDRESS: ${CONTRACT_ADDRESS:-}  # Required - ROFLAdapter contract address
+      
+      # Oracle configuration
+      POLLING_INTERVAL: ${POLLING_INTERVAL:-12}  # Seconds between event checks
+    
+    restart: on-failure
+    volumes:
+      - /run/rofl-appd.sock:/run/rofl-appd.sock
