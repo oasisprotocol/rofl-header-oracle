@@ -72,7 +72,7 @@ class TestSourceChainConfig:
     def test_missing_contract_address(self):
         """Test that missing contract address raises an error."""
         with pytest.raises(
-            ValueError, match="Source contract address is required"
+            ValueError, match="Source contract address cannot be empty string (SOURCE_CONTRACT_ADDRESS). Use None for push oracle mode."
         ):
             SourceChainConfig(rpc_url="https://test.rpc", contract_address="")
 
@@ -363,7 +363,7 @@ class TestOracleConfig:
     def test_from_env_missing_required(self):
         """Test that missing required environment variables raise errors."""
         # SOURCE_CONTRACT_ADDRESS is required
-        with pytest.raises(ValueError, match="SOURCE_CONTRACT_ADDRESS environment variable is required"):
+        with pytest.raises(ValueError, match="CONTRACT_ADDRESS environment variable is required. This should be the ROFLAdapter contract address on Sapphire."):
             OracleConfig.from_env()
 
     @patch.dict(
