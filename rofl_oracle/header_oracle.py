@@ -1,5 +1,6 @@
 import logging
 from typing import Any
+from asyncio import sleep
 
 from web3 import Web3
 from web3.types import BlockData
@@ -257,9 +258,9 @@ class HeaderOracle:
             latest_block_number_contract = await self.block_submitter.get_latest_block_number()
 
             while(latest_block_number_contract < latest_block_number_rpc):
-                logger.info(f"Pushing latest block header: {latest_block_number_rpc}")
-                # Fetch the latest block
-                block = self.fetch_block_by_number(latest_block_number_rpc)
+                logger.info(f"Pushing latest block header: {latest_block_number_contract}")
+                # Fetch the block at the current contract block number
+                block = self.fetch_block_by_number(latest_block_number_contract)
                 
                 if block:
                     block_hash = block.get("hash")
@@ -329,13 +330,10 @@ class HeaderOracle:
                 f"Starting push oracle with {self.config.monitoring.push_interval} second interval..."
             )
 
-            # Import asyncio for the sleep function
-            import asyncio
-
             # Main push loop
             while True:
                 await self.push_latest_block_header()
-                await asyncio.sleep(self.config.monitoring.push_interval)
+                await sleep(self.config.monitoring.push_interval)
 
         except Exception as e:
             logger.error(f"Error in push oracle loop: {e}", exc_info=True)
