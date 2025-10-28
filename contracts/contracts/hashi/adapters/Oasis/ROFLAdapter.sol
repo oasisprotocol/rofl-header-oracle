@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 pragma solidity ^0.8.20;
 
-import { Subcall } from "@oasisprotocol/sapphire-contracts/contracts/Subcall.sol";
-import { BlockHashAdapter } from "../BlockHashAdapter.sol";
+import {Subcall} from "@oasisprotocol/sapphire-contracts/contracts/Subcall.sol";
+import {BlockHashAdapter} from "../BlockHashAdapter.sol";
 
 /**
  * @title ROFLAdapter
@@ -14,6 +14,8 @@ contract ROFLAdapter is BlockHashAdapter {
     bytes21 public immutable roflAppID;
     address public ROFL_ORACLE;
     uint256 public immutable SOURCE_CHAIN_ID;
+
+    mapping(uint256 chainId => uint256 lastBlockNumber) public lastStoredBlock;
 
     error UnauthorizedROFLOracle();
 
@@ -29,11 +31,17 @@ contract ROFLAdapter is BlockHashAdapter {
      * @param blockNumber The block number to store the hash for
      * @param blockHash The block hash to store
      */
-    function storeBlockHeader(uint256 chainId, uint256 blockNumber, bytes32 blockHash) external {
+    function storeBlockHeader(
+        uint256 chainId,
+        uint256 blockNumber,
+        bytes32 blockHash
+    ) external {
         // Verify that the caller is authorized oracle address
         if (msg.sender != ROFL_ORACLE) {
             revert UnauthorizedROFLOracle();
         }
+
+        lastStoredBlock[chainId] = blockNumber;
 
         _storeHash(chainId, blockNumber, blockHash);
     }

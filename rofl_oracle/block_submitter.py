@@ -130,6 +130,20 @@ class BlockSubmitter:
         except Exception as e:
             logger.error(f"Error registering oracle: {e}", exc_info=True)
             return False
+
+    async def get_latest_block_number(self) -> int | None:
+        """
+        Get the latest stored block number for the source chain from the contract.
+        
+        Returns:
+            The latest stored block number, or None if not set or on error
+        """
+        try:
+            latest_block_number = self.contract.functions.lastStoredBlock(self.source_chain_id).call()
+            return latest_block_number if latest_block_number != 0 else None
+        except Exception as e:
+            logger.error(f"Error getting latest block number: {e}")
+            return None
     
     async def submit_block_header(
         self, block_number: int, block_hash: str

@@ -132,22 +132,30 @@ class HeaderOracle:
             )
             logger.debug("Event processor initialized")
 
-            # Load BlockHeaderRequester ABI for event listening
-            logger.debug("Loading BlockHeaderRequester ABI...")
-            self.block_requester_abi = self.contract_utility.get_contract_abi(
-                "BlockHeaderRequester"
-            )
-            logger.debug("ABI loaded")
+            # Load BlockHeaderRequester ABI for event listening (only needed in event listener mode)
+            if not config.source_chain.is_push_oracle:
+                logger.debug("Loading BlockHeaderRequester ABI...")
+                self.block_requester_abi = self.contract_utility.get_contract_abi(
+                    "BlockHeaderRequester"
+                )
+                logger.debug("ABI loaded")
+            else:
+                self.block_requester_abi = None
 
-            # Initialize polling event listener
-            logger.debug("Initializing polling event listener...")
-            self.event_listener = PollingEventListener(
-                rpc_url=config.source_chain.rpc_url,
-                contract_address=config.source_chain.contract_address,
-                event_name="BlockHeaderRequested",
-                abi=self.block_requester_abi,
-                lookback_blocks=config.monitoring.lookback_blocks,
-            )
+            # Initialize polling event listener or push mode (based on config)
+            if config.source_chain.is_push_oracle:
+                logger.info("Push oracle mode - will push latest block headers")
+                self.event_listener = None
+            else:
+                logger.debug("Initializing polling event listener...")
+                self.event_listener = PollingEventListener(
+                    rpc_url=config.source_chain.rpc_url,
+                    contract_address=config.source_chain.contract_address,
+                    event_name="BlockHeaderRequested",
+                    abi=self.block_requester_abi,
+                    lookback_blocks=config.monitoring.lookback_blocks,
+                )
+                logger.debug("Polling event listener initialized")
 
             logger.info(
                 f"HeaderOracle initialized ({'LOCAL' if config.local_mode else 'ROFL'} mode, source chain: {chain_id})"
@@ -238,22 +246,104 @@ class HeaderOracle:
                 exc_info=True,
             )
 
+    async def push_latest_block_header(self) -> None:
+        """
+        Push the latest block header from the source chain to the target chain.
+        Used in push oracle mode.
+        """
+        try:
+            # Get the latest block from source chain
+            latest_block_number_rpc = self.source_w3.eth.block_number
+            latest_block_number_contract = await self.block_submitter.get_latest_block_number()
+
+            while(latest_block_number_contract < latest_block_number_rpc):
+                logger.info(f"Pushing latest block header: {latest_block_number_rpc}")
+                # Fetch the latest block
+                block = self.fetch_block_by_number(latest_block_number_rpc)
+                
+                if block:
+                    block_hash = block.get("hash")
+
+                    if block_hash is not None:
+                        # Convert block_hash to hex string with 0x prefix
+                        block_hash_hex = (
+                            block_hash.hex()
+                            if isinstance(block_hash, bytes)
+                            else block_hash
+                        )
+                        if not block_hash_hex.startswith("0x"):
+                            block_hash_hex = "0x" + block_hash_hex
+
+                        # Submit the block header using BlockSubmitter
+                        success = await self.block_submitter.submit_block_header(
+                            latest_block_number_contract, block_hash_hex
+                        )
+
+                        if success:
+                            logger.info(
+                                f"Successfully pushed block {latest_block_number_contract} header to Sapphire"
+                            )
+                            latest_block_number_contract += 1
+                        else:
+                            logger.error(
+                                f"Failed to push block {latest_block_number_contract} header"
+                            )
+                    else:
+                        logger.error(f"Block {latest_block_number_contract} has no hash")
+                else:
+                    logger.error(f"Could not fetch latest block {latest_block_number_contract}")
+
+        except Exception as e:
+            logger.error(
+                f"Error pushing latest block header: {e}",
+                exc_info=True,
+            )
+
     async def shutdown(self) -> None:
         """Gracefully shutdown the oracle."""
         logger.info("Shutting down HeaderOracle...")
-        await self.event_listener.stop()
+        if self.event_listener:
+            await self.event_listener.stop()
         logger.info("HeaderOracle shutdown complete")
 
     async def run(self) -> None:
         """
         Main entry point for the HeaderOracle.
-        Starts event polling using the PollingEventListener.
+        Starts event polling or push mode based on configuration.
         """
         logger.info("Starting HeaderOracle...")
-        logger.info(
-            f"Polling for BlockHeaderRequested events from {self.config.source_chain.contract_address}"
-        )
+        
+        if self.config.source_chain.is_push_oracle:
+            logger.info("Running in push oracle mode - pushing latest block headers")
+            await self._run_push_mode()
+        else:
+            logger.info(
+                f"Running in event listener mode - polling for BlockHeaderRequested events from {self.config.source_chain.contract_address}"
+            )
+            await self._run_event_listener_mode()
 
+    async def _run_push_mode(self) -> None:
+        """Run in push oracle mode - continuously push latest block headers."""
+        try:
+            logger.info(
+                f"Starting push oracle with {self.config.monitoring.push_interval} second interval..."
+            )
+
+            # Import asyncio for the sleep function
+            import asyncio
+
+            # Main push loop
+            while True:
+                await self.push_latest_block_header()
+                await asyncio.sleep(self.config.monitoring.push_interval)
+
+        except Exception as e:
+            logger.error(f"Error in push oracle loop: {e}", exc_info=True)
+        finally:
+            logger.info("Push oracle stopped")
+
+    async def _run_event_listener_mode(self) -> None:
+        """Run in event listener mode - poll for BlockHeaderRequested events."""
         try:
             logger.info(
                 f"Starting polling event listener with {self.config.monitoring.polling_interval} second interval..."
@@ -266,8 +356,9 @@ class HeaderOracle:
             )
 
         except Exception as e:
-            logger.error(f"Error in main loop: {e}", exc_info=True)
+            logger.error(f"Error in event listener loop: {e}", exc_info=True)
         finally:
             logger.info("Cleaning up...")
-            await self.event_listener.stop()
+            if self.event_listener:
+                await self.event_listener.stop()
             logger.info("HeaderOracle stopped")
