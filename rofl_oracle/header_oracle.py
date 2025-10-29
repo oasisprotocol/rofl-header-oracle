@@ -1,6 +1,6 @@
 import logging
-from typing import Any
 from asyncio import sleep
+from typing import Any
 
 from web3 import Web3
 from web3.types import BlockData
