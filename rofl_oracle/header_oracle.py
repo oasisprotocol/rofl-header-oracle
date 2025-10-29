@@ -254,13 +254,19 @@ class HeaderOracle:
         """
         try:
             # Get the latest block from source chain
-            latest_block_number_rpc = self.source_w3.eth.block_number
-            latest_block_number_contract = await self.block_submitter.get_latest_block_number()
+            latest_block_number = self.source_w3.eth.block_number
+            last_stored_block = await self.block_submitter.get_latest_block_number()
 
-            while(latest_block_number_contract < latest_block_number_rpc):
-                logger.info(f"Pushing latest block header: {latest_block_number_contract}")
+            if last_stored_block == 0:
+                next_block_to_push = latest_block_number
+            else:
+                next_block_to_push = last_stored_block + 1
+            
+
+            while(next_block_to_push < min(latest_block_number, last_stored_block + 20)):
+                logger.info(f"Pushing latest block header: {next_block_to_push}")
                 # Fetch the block at the current contract block number
-                block = self.fetch_block_by_number(latest_block_number_contract)
+                block = self.fetch_block_by_number(next_block_to_push)
                 
                 if block:
                     block_hash = block.get("hash")
@@ -277,22 +283,22 @@ class HeaderOracle:
 
                         # Submit the block header using BlockSubmitter
                         success = await self.block_submitter.submit_block_header(
-                            latest_block_number_contract, block_hash_hex
+                            next_block_to_push, block_hash_hex
                         )
 
                         if success:
                             logger.info(
-                                f"Successfully pushed block {latest_block_number_contract} header to Sapphire"
+                                f"Successfully pushed block {next_block_to_push} header to Sapphire"
                             )
-                            latest_block_number_contract += 1
+                            next_block_to_push += 1
                         else:
                             logger.error(
-                                f"Failed to push block {latest_block_number_contract} header"
+                                f"Failed to push block {next_block_to_push} header"
                             )
                     else:
-                        logger.error(f"Block {latest_block_number_contract} has no hash")
+                        logger.error(f"Block {next_block_to_push} has no hash")
                 else:
-                    logger.error(f"Could not fetch latest block {latest_block_number_contract}")
+                    logger.error(f"Could not fetch latest block {next_block_to_push}")
 
         except Exception as e:
             logger.error(
