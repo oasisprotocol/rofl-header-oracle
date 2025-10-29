@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Integration tests for push oracle mode."""
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
