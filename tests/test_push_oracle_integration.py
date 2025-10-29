@@ -126,27 +126,27 @@ class TestPushOracleMode:
         """Test pushing block header when no blocks have been stored yet."""
         # Mock BlockSubmitter
         mock_block_submitter = MagicMock()
-        mock_block_submitter.get_latest_block_number = AsyncMock(return_value=0)  # No blocks stored
+        mock_block_submitter.get_latest_block_number = AsyncMock(return_value=None)  # No blocks stored
         mock_block_submitter.submit_block_header = AsyncMock(return_value=True)
-        
+
         # Mock Web3 source chain
         mock_source_w3 = MagicMock()
         mock_source_w3.eth.block_number = 1000  # Current latest block
-        
+
         # Create HeaderOracle instance
         oracle = HeaderOracle()
         oracle.block_submitter = mock_block_submitter
         oracle.source_w3 = mock_source_w3
-        
+
         # Mock fetch_block_by_number
         mock_block_data = {
             "hash": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
             "number": 1000
         }
         oracle.fetch_block_by_number = MagicMock(return_value=mock_block_data)
-        
+
         await oracle.push_latest_block_header()
-        
+
         # Should start from latest block (1000) when no blocks stored
         oracle.fetch_block_by_number.assert_called_once_with(1000)
         mock_block_submitter.submit_block_header.assert_called_once_with(
@@ -160,16 +160,16 @@ class TestPushOracleMode:
         mock_block_submitter = MagicMock()
         mock_block_submitter.get_latest_block_number = AsyncMock(return_value=995)  # 5 blocks behind
         mock_block_submitter.submit_block_header = AsyncMock(return_value=True)
-        
+
         # Mock Web3 source chain
         mock_source_w3 = MagicMock()
         mock_source_w3.eth.block_number = 1000  # Current latest block
-        
+
         # Create HeaderOracle instance
         oracle = HeaderOracle()
         oracle.block_submitter = mock_block_submitter
         oracle.source_w3 = mock_source_w3
-        
+
         # Mock fetch_block_by_number to return different blocks
         def mock_fetch_block(block_number):
             return {
@@ -177,14 +177,18 @@ class TestPushOracleMode:
                 "number": block_number
             }
         oracle.fetch_block_by_number = MagicMock(side_effect=mock_fetch_block)
-        
+
         await oracle.push_latest_block_header()
-        
-        # Should start from block 996 (last stored + 1)
-        oracle.fetch_block_by_number.assert_called_with(996)
-        mock_block_submitter.submit_block_header.assert_called_with(
-            996, f"0x{996:064x}"
-        )
+
+        # Should push blocks 996-1000 (5 blocks total)
+        assert oracle.fetch_block_by_number.call_count == 5
+        assert mock_block_submitter.submit_block_header.call_count == 5
+
+        for block_num in range(996, 1001):
+            oracle.fetch_block_by_number.assert_any_call(block_num)
+            mock_block_submitter.submit_block_header.assert_any_call(
+                block_num, f"0x{block_num:064x}"
+            )
 
     @pytest.mark.asyncio
     async def test_push_latest_block_header_up_to_date(self):

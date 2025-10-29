@@ -257,17 +257,19 @@ class HeaderOracle:
             latest_block_number = self.source_w3.eth.block_number
             last_stored_block = await self.block_submitter.get_latest_block_number()
 
-            if last_stored_block == 0:
+            if last_stored_block is None or last_stored_block == 0:
                 next_block_to_push = latest_block_number
+                end_block = latest_block_number
             else:
                 next_block_to_push = last_stored_block + 1
-            
+                end_block = min(latest_block_number, last_stored_block + 20)
 
-            while(next_block_to_push < min(latest_block_number, last_stored_block + 20)):
+
+            while next_block_to_push <= end_block:
                 logger.info(f"Pushing latest block header: {next_block_to_push}")
                 # Fetch the block at the current contract block number
                 block = self.fetch_block_by_number(next_block_to_push)
-                
+
                 if block:
                     block_hash = block.get("hash")
 
@@ -295,10 +297,13 @@ class HeaderOracle:
                             logger.error(
                                 f"Failed to push block {next_block_to_push} header"
                             )
+                            break
                     else:
                         logger.error(f"Block {next_block_to_push} has no hash")
+                        break
                 else:
                     logger.error(f"Could not fetch latest block {next_block_to_push}")
+                    break
 
         except Exception as e:
             logger.error(
