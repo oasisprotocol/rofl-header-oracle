@@ -418,22 +418,23 @@ class TestPushOracleMode:
         """Test proper hex conversion for bytes block hash."""
         oracle = HeaderOracle()
         oracle.block_submitter = MagicMock()
-        oracle.block_submitter.get_latest_block_number.return_value = 995
+        oracle.block_submitter.get_latest_block_number = AsyncMock(return_value=995)
         oracle.block_submitter.submit_block_header = AsyncMock(return_value=True)
-        
+
         oracle.source_w3 = MagicMock()
         oracle.source_w3.eth.block_number = 1000
-        
+
         # Mock block with bytes hash
         mock_block_data = {
             "hash": bytes.fromhex("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"),
             "number": 996
         }
         oracle.fetch_block_by_number = MagicMock(return_value=mock_block_data)
-        
+
         await oracle.push_latest_block_header()
-        
-        # Should convert bytes to hex string with 0x prefix
-        oracle.block_submitter.submit_block_header.assert_called_once_with(
-            996, "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-        )
+
+        # Should convert bytes to hex string with 0x prefix (backfill pushes 996-1000)
+        assert oracle.block_submitter.submit_block_header.call_count == 5
+        for call in oracle.block_submitter.submit_block_header.call_args_list:
+            _, hash_arg = call[0]
+            assert hash_arg == "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"

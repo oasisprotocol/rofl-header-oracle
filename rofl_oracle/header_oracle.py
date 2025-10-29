@@ -346,6 +346,8 @@ class HeaderOracle:
                 await self.push_latest_block_header()
                 await sleep(self.config.monitoring.push_interval)
 
+        except KeyboardInterrupt:
+            logger.info("Push oracle interrupted")
         except Exception as e:
             logger.error(f"Error in push oracle loop: {e}", exc_info=True)
         finally:
