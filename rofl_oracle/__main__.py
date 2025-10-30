@@ -74,7 +74,7 @@ async def main() -> None:
             "  - TARGET_RPC_URL: Target chain RPC endpoint (default: testnet)"
         )
         logger.error(
-            "  - SOURCE_CONTRACT_ADDRESS: BlockHeaderRequester contract address"
+            "  - SOURCE_CONTRACT_ADDRESS: BlockHeaderRequester contract address (leave empty for push oracle mode)"
         )
         logger.error("  - CONTRACT_ADDRESS: ROFLAdapter contract address")
         if args.local:

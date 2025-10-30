@@ -22,12 +22,12 @@ class SourceChainConfig:
 
     Attributes:
         rpc_url: HTTP(S) RPC endpoint for the source chain
-        contract_address: Checksummed address of BlockHeaderRequester contract
+        contract_address: Checksummed address of BlockHeaderRequester contract (None for push oracle mode)
         chain_id: Chain ID (fetched from RPC, not configured)
     """
 
     rpc_url: str
-    contract_address: str
+    contract_address: str | None = None  # None for push oracle mode
     chain_id: int | None = None  # Set after connecting to RPC
 
     def __post_init__(self) -> None:
@@ -43,22 +43,29 @@ class SourceChainConfig:
                 "Expected http, https, ws, or wss"
             )
 
-        # Validate and checksum contract address
-        if not self.contract_address:
-            raise ValueError(
-                "Source contract address is required (SOURCE_CONTRACT_ADDRESS)"
-            )
+        # Validate and checksum contract address (only if provided)
+        if self.contract_address is not None:
+            if not self.contract_address:
+                raise ValueError(
+                    "Source contract address cannot be empty string (SOURCE_CONTRACT_ADDRESS). "
+                    "Use None for push oracle mode."
+                )
 
-        if not Web3.is_address(self.contract_address):
-            raise ValueError(
-                f"Invalid source contract address: {self.contract_address}"
-            )
+            if not Web3.is_address(self.contract_address):
+                raise ValueError(
+                    f"Invalid source contract address: {self.contract_address}"
+                )
 
-        # Convert to checksum address
-        checksummed = Web3.to_checksum_address(self.contract_address)
-        if checksummed != self.contract_address:
-            # Use object.__setattr__ since dataclass is frozen
-            object.__setattr__(self, "contract_address", checksummed)
+            # Convert to checksum address
+            checksummed = Web3.to_checksum_address(self.contract_address)
+            if checksummed != self.contract_address:
+                # Use object.__setattr__ since dataclass is frozen
+                object.__setattr__(self, "contract_address", checksummed)
+
+    @property
+    def is_push_oracle(self) -> bool:
+        """Return True if configured as a push oracle (no source contract)."""
+        return self.contract_address is None
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +118,7 @@ class MonitoringConfig:
     lookback_blocks: int  # blocks to look back on startup
     request_timeout: int  # HTTP request timeout in seconds
     retry_count: int  # retry attempts for operations
+    push_interval: int = 60  # seconds between block pushes in push oracle mode
 
     def __post_init__(self) -> None:
         """Validate monitoring configuration."""
@@ -152,6 +160,16 @@ class MonitoringConfig:
         if self.retry_count > 10:
             raise ValueError(
                 f"Retry count too high (max 10), got {self.retry_count}"
+            )
+
+        # Validate push interval
+        if self.push_interval <= 0:
+            raise ValueError(
+                f"Push interval must be positive, got {self.push_interval}"
+            )
+        if self.push_interval > 300:
+            raise ValueError(
+                f"Push interval too long (max 300s), got {self.push_interval}"
             )
 
 
@@ -219,14 +237,11 @@ class OracleConfig:
         )
 
         source_contract = os.environ.get("SOURCE_CONTRACT_ADDRESS", "")
-        if not source_contract:
-            raise ValueError(
-                "SOURCE_CONTRACT_ADDRESS environment variable is required. "
-                "This should be the BlockHeaderRequester contract address."
-            )
+        # Allow empty string to enable push oracle mode
+        source_contract_addr = source_contract if source_contract else None
 
         source_config = SourceChainConfig(
-            rpc_url=source_rpc_url, contract_address=source_contract
+            rpc_url=source_rpc_url, contract_address=source_contract_addr
         )
 
         # Load target chain config
@@ -251,12 +266,14 @@ class OracleConfig:
         lookback_blocks = int(os.environ.get("LOOKBACK_BLOCKS", "9"))
         request_timeout = int(os.environ.get("REQUEST_TIMEOUT", "30"))
         retry_count = int(os.environ.get("RETRY_COUNT", "3"))
+        push_interval = int(os.environ.get("PUSH_INTERVAL", "60"))
 
         monitoring_config = MonitoringConfig(
             polling_interval=polling_interval,
             lookback_blocks=lookback_blocks,
             request_timeout=request_timeout,
             retry_count=retry_count,
+            push_interval=push_interval,
         )
 
         # Load oracle config
@@ -280,7 +297,9 @@ class OracleConfig:
 
         logger.info("Source Chain:")
         logger.info(f"  RPC URL: {self.source_chain.rpc_url}")
-        logger.info(f"  Contract: {self.source_chain.contract_address}")
+        logger.info(f"  Mode: {'PUSH ORACLE' if self.source_chain.is_push_oracle else 'EVENT LISTENER'}")
+        if not self.source_chain.is_push_oracle:
+            logger.info(f"  Contract: {self.source_chain.contract_address}")
         if self.source_chain.chain_id:
             logger.info(f"  Chain ID: {self.source_chain.chain_id}")
 
@@ -297,6 +316,9 @@ class OracleConfig:
             f"  Request Timeout: {self.monitoring.request_timeout} seconds"
         )
         logger.info(f"  Retry Count: {self.monitoring.retry_count}")
+        logger.info(
+            f"  Push Interval: {self.monitoring.push_interval} seconds"
+        )
 
         logger.info("Oracle Settings:")
         logger.info(f"  Mode: {'LOCAL' if self.local_mode else 'PRODUCTION'}")
