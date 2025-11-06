@@ -72,7 +72,7 @@ class TestSourceChainConfig:
     def test_missing_contract_address(self):
         """Test that missing contract address raises an error."""
         with pytest.raises(
-            ValueError, match=r"Source contract address cannot be empty string \(SOURCE_CONTRACT_ADDRESS\). Use None for push oracle mode\."
+            ValueError, match=r"Source contract address cannot be empty string \(SOURCE_CONTRACT_ADDRESS\). Use None for push oracle or watcher mode\."
         ):
             SourceChainConfig(rpc_url="https://test.rpc", contract_address="")
 

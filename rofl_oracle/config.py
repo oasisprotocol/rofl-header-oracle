@@ -22,13 +22,15 @@ class SourceChainConfig:
 
     Attributes:
         rpc_url: HTTP(S) RPC endpoint for the source chain
-        contract_address: Checksummed address of BlockHeaderRequester contract (None for push oracle mode)
+        contract_address: Checksummed address of BlockHeaderRequester contract (None for push/watcher mode)
         chain_id: Chain ID (fetched from RPC, not configured)
+        watch_addresses: List of addresses to watch for interactions (watcher mode only)
     """
 
     rpc_url: str
-    contract_address: str | None = None  # None for push oracle mode
+    contract_address: str | None = None  # None for push oracle or watcher mode
     chain_id: int | None = None  # Set after connecting to RPC
+    watch_addresses: list[str] | None = None  # Addresses to watch in watcher mode
 
     def __post_init__(self) -> None:
         """Validate source chain configuration."""
@@ -48,7 +50,7 @@ class SourceChainConfig:
             if not self.contract_address:
                 raise ValueError(
                     "Source contract address cannot be empty string (SOURCE_CONTRACT_ADDRESS). "
-                    "Use None for push oracle mode."
+                    "Use None for push oracle or watcher mode."
                 )
 
             if not Web3.is_address(self.contract_address):
@@ -62,10 +64,32 @@ class SourceChainConfig:
                 # Use object.__setattr__ since dataclass is frozen
                 object.__setattr__(self, "contract_address", checksummed)
 
+        # Validate watch addresses if provided
+        if self.watch_addresses is not None:
+            if not isinstance(self.watch_addresses, list):
+                raise ValueError("Watch addresses must be a list")
+            
+            if len(self.watch_addresses) == 0:
+                raise ValueError("Watch addresses list cannot be empty")
+            
+            # Checksum all watch addresses
+            checksummed_addresses = []
+            for addr in self.watch_addresses:
+                if not Web3.is_address(addr):
+                    raise ValueError(f"Invalid watch address: {addr}")
+                checksummed_addresses.append(Web3.to_checksum_address(addr))
+            
+            object.__setattr__(self, "watch_addresses", checksummed_addresses)
+
     @property
     def is_push_oracle(self) -> bool:
-        """Return True if configured as a push oracle (no source contract)."""
-        return self.contract_address is None
+        """Return True if configured as a push oracle (no source contract, no watch addresses)."""
+        return self.contract_address is None and self.watch_addresses is None
+
+    @property
+    def is_watcher_mode(self) -> bool:
+        """Return True if configured as a watcher (has watch addresses)."""
+        return self.watch_addresses is not None and len(self.watch_addresses) > 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -237,11 +261,22 @@ class OracleConfig:
         )
 
         source_contract = os.environ.get("SOURCE_CONTRACT_ADDRESS", "")
-        # Allow empty string to enable push oracle mode
+        # Allow empty string to enable push oracle or watcher mode
         source_contract_addr = source_contract if source_contract else None
 
+        # Load watch addresses for watcher mode
+        watch_addresses_str = os.environ.get("WATCH_ADDRESSES", "")
+        watch_addresses = None
+        if watch_addresses_str:
+            # Parse comma-separated addresses
+            watch_addresses = [addr.strip() for addr in watch_addresses_str.split(",") if addr.strip()]
+            if len(watch_addresses) == 0:
+                watch_addresses = None
+
         source_config = SourceChainConfig(
-            rpc_url=source_rpc_url, contract_address=source_contract_addr
+            rpc_url=source_rpc_url, 
+            contract_address=source_contract_addr,
+            watch_addresses=watch_addresses
         )
 
         # Load target chain config
@@ -297,8 +332,15 @@ class OracleConfig:
 
         logger.info("Source Chain:")
         logger.info(f"  RPC URL: {self.source_chain.rpc_url}")
-        logger.info(f"  Mode: {'PUSH ORACLE' if self.source_chain.is_push_oracle else 'EVENT LISTENER'}")
-        if not self.source_chain.is_push_oracle:
+        if self.source_chain.is_watcher_mode:
+            logger.info(f"  Mode: WATCHER MODE")
+            logger.info(f"  Watching {len(self.source_chain.watch_addresses)} address(es):")
+            for addr in self.source_chain.watch_addresses:
+                logger.info(f"    - {addr}")
+        elif self.source_chain.is_push_oracle:
+            logger.info(f"  Mode: PUSH ORACLE")
+        else:
+            logger.info(f"  Mode: EVENT LISTENER")
             logger.info(f"  Contract: {self.source_chain.contract_address}")
         if self.source_chain.chain_id:
             logger.info(f"  Chain ID: {self.source_chain.chain_id}")
@@ -344,6 +386,7 @@ class OracleConfig:
             rpc_url=self.source_chain.rpc_url,
             contract_address=self.source_chain.contract_address,
             chain_id=chain_id,
+            watch_addresses=self.source_chain.watch_addresses,
         )
 
         return OracleConfig(

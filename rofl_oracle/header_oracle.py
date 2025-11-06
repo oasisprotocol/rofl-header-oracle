@@ -134,7 +134,7 @@ class HeaderOracle:
             logger.debug("Event processor initialized")
 
             # Load BlockHeaderRequester ABI for event listening (only needed in event listener mode)
-            if not config.source_chain.is_push_oracle:
+            if not config.source_chain.is_push_oracle and not config.source_chain.is_watcher_mode:
                 logger.debug("Loading BlockHeaderRequester ABI...")
                 self.block_requester_abi = self.contract_utility.get_contract_abi(
                     "BlockHeaderRequester"
@@ -143,8 +143,15 @@ class HeaderOracle:
             else:
                 self.block_requester_abi = None
 
-            # Initialize polling event listener or push mode (based on config)
-            if config.source_chain.is_push_oracle:
+            # Initialize polling event listener, push mode, or watcher mode (based on config)
+            if config.source_chain.is_watcher_mode:
+                logger.info(f"Watcher mode - monitoring {len(config.source_chain.watch_addresses)} address(es) for interactions")
+                for addr in config.source_chain.watch_addresses:
+                    logger.info(f"  Watching: {addr}")
+                self.event_listener = None
+                self.watched_addresses = set(addr.lower() for addr in config.source_chain.watch_addresses)
+                self.processed_blocks = set()  # Track processed blocks to avoid duplicates
+            elif config.source_chain.is_push_oracle:
                 logger.info("Push oracle mode - will push latest block headers")
                 self.event_listener = None
             else:
@@ -311,6 +318,141 @@ class HeaderOracle:
                 exc_info=True,
             )
 
+    async def watch_addresses_for_interactions(self) -> None:
+        """
+        Watch configured addresses for any interactions and push blocks when detected.
+        Used in watcher mode.
+        """
+        try:
+            # Get the latest block from source chain
+            latest_block_number = self.source_w3.eth.block_number
+            
+            # Get the last processed block (stored on target chain)
+            last_stored_block = await self.block_submitter.get_latest_block_number()
+            
+            # Determine starting point
+            if last_stored_block is None or last_stored_block == 0:
+                # Start from a recent block (e.g., 100 blocks back)
+                start_block = max(0, latest_block_number - self.config.monitoring.lookback_blocks)
+            else:
+                start_block = last_stored_block + 1
+            
+            # Don't scan too far ahead
+            end_block = min(latest_block_number, start_block + 50)
+            
+            if start_block > latest_block_number:
+                logger.debug(f"Watcher is up to date (last: {last_stored_block}, latest: {latest_block_number})")
+                return
+            
+            logger.info(f"Scanning blocks {start_block} to {end_block} for watched address interactions")
+            
+            # Scan blocks for interactions with watched addresses
+            for block_number in range(start_block, end_block + 1):
+                if await self._check_block_for_interactions(block_number):
+                    logger.info(f"Interaction detected in block {block_number}, pushing block header")
+                    
+                    # Fetch and push the block
+                    block = self.fetch_block_by_number(block_number)
+                    if block:
+                        block_hash = block.get("hash")
+                        if block_hash is not None:
+                            # Convert block_hash to hex string with 0x prefix
+                            block_hash_hex = (
+                                block_hash.hex()
+                                if isinstance(block_hash, bytes)
+                                else block_hash
+                            )
+                            if not block_hash_hex.startswith("0x"):
+                                block_hash_hex = "0x" + block_hash_hex
+
+                            # Submit the block header
+                            success = await self.block_submitter.submit_block_header(
+                                block_number, block_hash_hex
+                            )
+
+                            if success:
+                                logger.info(f"Successfully pushed block {block_number} header with interaction")
+                            else:
+                                logger.error(f"Failed to push block {block_number} header")
+                                break  # Stop on failure
+                        else:
+                            logger.error(f"Block {block_number} has no hash")
+                            break
+                    else:
+                        logger.error(f"Could not fetch block {block_number}")
+                        break
+
+        except Exception as e:
+            logger.error(
+                f"Error watching addresses for interactions: {e}",
+                exc_info=True,
+            )
+
+    async def _check_block_for_interactions(self, block_number: int) -> bool:
+        """
+        Check if a block contains any interactions with watched addresses.
+        
+        :param block_number: Block number to check
+        :return: True if interactions detected, False otherwise
+        """
+        try:
+            block = self.fetch_block_by_number(block_number)
+            if not block:
+                return False
+            
+            transactions = block.get("transactions", [])
+            
+            # If transactions are just hashes, we need to fetch full transaction details
+            if transactions and isinstance(transactions[0], str):
+                # Transactions are hashes, need to fetch details
+                for tx_hash in transactions:
+                    try:
+                        tx = self.source_w3.eth.get_transaction(tx_hash)
+                        if self._is_watched_transaction(tx):
+                            logger.debug(f"Found interaction in tx {tx_hash.hex() if isinstance(tx_hash, bytes) else tx_hash}")
+                            return True
+                    except Exception as e:
+                        logger.warning(f"Error fetching transaction {tx_hash}: {e}")
+                        continue
+            else:
+                # Transactions are full objects
+                for tx in transactions:
+                    if self._is_watched_transaction(tx):
+                        tx_hash = tx.get("hash", "unknown")
+                        logger.debug(f"Found interaction in tx {tx_hash.hex() if isinstance(tx_hash, bytes) else tx_hash}")
+                        return True
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error checking block {block_number} for interactions: {e}")
+            return False
+
+    def _is_watched_transaction(self, tx: Any) -> bool:
+        """
+        Check if a transaction involves any watched addresses.
+        
+        :param tx: Transaction object
+        :return: True if transaction involves watched address
+        """
+        if not tx:
+            return False
+        
+        # Check 'from' address
+        from_addr = tx.get("from", "").lower() if tx.get("from") else ""
+        if from_addr in self.watched_addresses:
+            return True
+        
+        # Check 'to' address
+        to_addr = tx.get("to", "").lower() if tx.get("to") else ""
+        if to_addr in self.watched_addresses:
+            return True
+        
+        # TODO: Could also check internal transactions via trace_transaction
+        # For now, this catches direct interactions
+        
+        return False
+
     async def shutdown(self) -> None:
         """Gracefully shutdown the oracle."""
         logger.info("Shutting down HeaderOracle...")
@@ -321,11 +463,14 @@ class HeaderOracle:
     async def run(self) -> None:
         """
         Main entry point for the HeaderOracle.
-        Starts event polling or push mode based on configuration.
+        Starts event polling, push mode, or watcher mode based on configuration.
         """
         logger.info("Starting HeaderOracle...")
         
-        if self.config.source_chain.is_push_oracle:
+        if self.config.source_chain.is_watcher_mode:
+            logger.info(f"Running in watcher mode - monitoring {len(self.config.source_chain.watch_addresses)} address(es)")
+            await self._run_watcher_mode()
+        elif self.config.source_chain.is_push_oracle:
             logger.info("Running in push oracle mode - pushing latest block headers")
             await self._run_push_mode()
         else:
@@ -352,6 +497,25 @@ class HeaderOracle:
             logger.error(f"Error in push oracle loop: {e}", exc_info=True)
         finally:
             logger.info("Push oracle stopped")
+
+    async def _run_watcher_mode(self) -> None:
+        """Run in watcher mode - continuously scan for address interactions."""
+        try:
+            logger.info(
+                f"Starting watcher with {self.config.monitoring.push_interval} second interval..."
+            )
+
+            # Main watcher loop
+            while True:
+                await self.watch_addresses_for_interactions()
+                await sleep(self.config.monitoring.push_interval)
+
+        except KeyboardInterrupt:
+            logger.info("Watcher interrupted")
+        except Exception as e:
+            logger.error(f"Error in watcher loop: {e}", exc_info=True)
+        finally:
+            logger.info("Watcher stopped")
 
     async def _run_event_listener_mode(self) -> None:
         """Run in event listener mode - poll for BlockHeaderRequested events."""
