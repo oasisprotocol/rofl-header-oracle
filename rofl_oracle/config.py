@@ -333,14 +333,14 @@ class OracleConfig:
         logger.info("Source Chain:")
         logger.info(f"  RPC URL: {self.source_chain.rpc_url}")
         if self.source_chain.is_watcher_mode:
-            logger.info(f"  Mode: WATCHER MODE")
+            logger.info("  Mode: WATCHER MODE")
             logger.info(f"  Watching {len(self.source_chain.watch_addresses)} address(es):")
             for addr in self.source_chain.watch_addresses:
                 logger.info(f"    - {addr}")
         elif self.source_chain.is_push_oracle:
-            logger.info(f"  Mode: PUSH ORACLE")
+            logger.info("  Mode: PUSH ORACLE")
         else:
-            logger.info(f"  Mode: EVENT LISTENER")
+            logger.info("  Mode: EVENT LISTENER")
             logger.info(f"  Contract: {self.source_chain.contract_address}")
         if self.source_chain.chain_id:
             logger.info(f"  Chain ID: {self.source_chain.chain_id}")

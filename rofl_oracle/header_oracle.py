@@ -149,7 +149,7 @@ class HeaderOracle:
                 for addr in config.source_chain.watch_addresses:
                     logger.info(f"  Watching: {addr}")
                 self.event_listener = None
-                self.watched_addresses = set(addr.lower() for addr in config.source_chain.watch_addresses)
+                self.watched_addresses = {addr.lower() for addr in config.source_chain.watch_addresses}
                 self.processed_blocks = set()  # Track processed blocks to avoid duplicates
             elif config.source_chain.is_push_oracle:
                 logger.info("Push oracle mode - will push latest block headers")
@@ -445,13 +445,11 @@ class HeaderOracle:
         
         # Check 'to' address
         to_addr = tx.get("to", "").lower() if tx.get("to") else ""
-        if to_addr in self.watched_addresses:
-            return True
-        
         # TODO: Could also check internal transactions via trace_transaction
         # For now, this catches direct interactions
+        return to_addr in self.watched_addresses
+
         
-        return False
 
     async def shutdown(self) -> None:
         """Gracefully shutdown the oracle."""
