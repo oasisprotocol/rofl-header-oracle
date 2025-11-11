@@ -203,7 +203,6 @@ class TestEventListenerIntegration:
             await event_listener.stop()
 
     @pytest.mark.skip(reason="Integration test requiring real WebSocket connection - should be run separately")
-    @pytest.mark.slow
     @pytest.mark.asyncio
     async def test_event_subscription_with_timeout(
         self, source_rpc_url, source_contract

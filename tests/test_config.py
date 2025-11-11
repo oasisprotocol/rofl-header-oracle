@@ -8,12 +8,12 @@ from unittest.mock import patch
 import pytest
 
 from rofl_oracle.config import (
-    MonitoringConfig,
     OracleConfig,
-    SourceChainConfig,
-    TargetChainConfig,
+    CommonConfig,
+    WatcherConfig,
+    PushOracleConfig,
+    EventListenerConfig
 )
-
 
 class TestSourceChainConfig:
     """Tests for SourceChainConfig."""

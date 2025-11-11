@@ -16,7 +16,7 @@ services:
       
       # Target chain configuration
       TARGET_RPC_URL: ${TARGET_RPC_URL:-https://testnet.sapphire.oasis.io}
-      CONTRACT_ADDRESS: ${CONTRACT_ADDRESS:-}  # Required - ROFLAdapter contract address
+      ROFL_ADAPTER_ADDRESS: ${ROFL_ADAPTER_ADDRESS:-}  # Required - ROFLAdapter contract address
       
       # Oracle configuration
       POLLING_INTERVAL: ${POLLING_INTERVAL:-12}  # Seconds between event checks

@@ -8,10 +8,10 @@ from web3 import Web3
 
 from rofl_oracle.block_submitter import BlockSubmitter
 from rofl_oracle.config import (
-    MonitoringConfig,
+    CommonConfig,
     OracleConfig,
-    SourceChainConfig,
-    TargetChainConfig,
+    OracleMode,
+    PushOracleConfig,
 )
 from rofl_oracle.header_oracle import HeaderOracle
 
@@ -35,43 +35,34 @@ def web3_instance(source_rpc_url):
 
 
 @pytest.fixture
-def mock_source_chain_config():
-    """Create a mock source chain config for push oracle mode."""
-    return SourceChainConfig(
-        rpc_url="http://localhost:8545",
-        contract_address=None,  # None for push oracle mode
-        chain_id=1337
-    )
-
-
-@pytest.fixture
-def mock_target_chain_config():
-    """Create a mock target chain config."""
-    return TargetChainConfig(
-        rpc_url="http://localhost:8546",
-        contract_address="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb7"
-    )
-
-
-@pytest.fixture
-def mock_monitoring_config():
-    """Create a mock monitoring config with short intervals for testing."""
-    return MonitoringConfig(
-        polling_interval=1,
-        lookback_blocks=10,
+def mock_common_config():
+    """Create a mock common config."""
+    return CommonConfig(
+        source_rpc_url="http://localhost:8545",
+        source_chain_id=1337,
+        target_rpc_url="http://localhost:8546",
         request_timeout=5,
         retry_count=2,
-        push_interval=2,  # Short interval for testing
+        target_contract_address="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb7",
     )
 
 
 @pytest.fixture
-def mock_oracle_config(mock_source_chain_config, mock_target_chain_config, mock_monitoring_config):
+def mock_push_oracle_config():
+    """Create a mock push oracle config with short intervals for testing."""
+    return PushOracleConfig(
+        push_interval=2,  # Short interval for testing
+        batch_size=20,
+    )
+
+
+@pytest.fixture
+def mock_oracle_config(mock_common_config, mock_push_oracle_config):
     """Create a mock oracle config for push oracle mode."""
     return OracleConfig(
-        source_chain=mock_source_chain_config,
-        target_chain=mock_target_chain_config,
-        monitoring=mock_monitoring_config,
+        common_config=mock_common_config,
+        oracle_mode=OracleMode.PUSH,
+        mode_config=mock_push_oracle_config,
         local_mode=True,
         local_private_key="0x" + "a" * 64
     )
@@ -83,8 +74,8 @@ class TestPushOracleMode:
     @pytest.mark.asyncio
     async def test_push_oracle_config_detection(self, mock_oracle_config):
         """Test that push oracle mode is correctly detected from config."""
-        assert mock_oracle_config.source_chain.is_push_oracle is True
-        assert mock_oracle_config.source_chain.contract_address is None
+        assert mock_oracle_config.oracle_mode == OracleMode.PUSH
+        assert isinstance(mock_oracle_config.mode_config, PushOracleConfig)
 
     @pytest.mark.asyncio
     async def test_push_oracle_initialization(self, mock_oracle_config):
@@ -116,7 +107,7 @@ class TestPushOracleMode:
                         oracle = await HeaderOracle.create(mock_oracle_config)
                         
                         # Verify push oracle mode initialization
-                        assert oracle.config.source_chain.is_push_oracle is True
+                        assert oracle.config.oracle_mode == OracleMode.PUSH
                         assert oracle.event_listener is None  # No event listener in push mode
                         assert oracle.block_requester_abi is None  # No ABI needed
 
@@ -390,7 +381,7 @@ class TestPushOracleMode:
         """Test the push mode loop with interruption."""
         oracle = HeaderOracle()
         oracle.config = MagicMock()
-        oracle.config.monitoring.push_interval = 0.1  # Very short for testing
+        oracle.config.mode_config.push_interval = 0.1  # Very short for testing
         
         # Mock push_latest_block_header
         oracle.push_latest_block_header = AsyncMock()

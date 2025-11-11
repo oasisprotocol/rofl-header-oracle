@@ -79,7 +79,7 @@ async def main() -> None:
         logger.error(
             "  - WATCH_ADDRESSES: Comma-separated addresses to watch (for watcher mode only)"
         )
-        logger.error("  - CONTRACT_ADDRESS: ROFLAdapter contract address")
+        logger.error("  - ROFL_ADAPTER_ADDRESS: ROFLAdapter contract address")
         if args.local:
             logger.error("  - LOCAL_PRIVATE_KEY: Private key for local mode")
         sys.exit(1)

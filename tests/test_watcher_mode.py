@@ -8,10 +8,11 @@ from web3 import Web3
 
 from rofl_oracle.block_submitter import BlockSubmitter
 from rofl_oracle.config import (
-    MonitoringConfig,
+    CommonConfig,
     OracleConfig,
-    SourceChainConfig,
-    TargetChainConfig,
+    OracleMode,
+    PushOracleConfig,
+    WatcherConfig,
 )
 from rofl_oracle.header_oracle import HeaderOracle
 
@@ -35,66 +36,55 @@ def web3_instance(source_rpc_url):
 
 
 @pytest.fixture
-def mock_source_chain_config():
-    """Create a mock source chain config for push oracle mode."""
-    return SourceChainConfig(
-        rpc_url="http://localhost:8545",
-        contract_address=None,  # None for push oracle mode
-        chain_id=1337
-    )
-
-
-@pytest.fixture
-def mock_target_chain_config():
-    """Create a mock target chain config."""
-    return TargetChainConfig(
-        rpc_url="http://localhost:8546",
-        contract_address="0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"
-    )
-
-
-@pytest.fixture
-def mock_monitoring_config():
-    """Create a mock monitoring config with short intervals for testing."""
-    return MonitoringConfig(
-        polling_interval=1,
-        lookback_blocks=10,
+def mock_common_config():
+    """Create a mock common config."""
+    return CommonConfig(
+        source_rpc_url="http://localhost:8545",
+        source_chain_id=1337,
+        target_rpc_url="http://localhost:8546",
         request_timeout=5,
         retry_count=2,
-        push_interval=2,  # Short interval for testing
+        target_contract_address="0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7",
     )
 
 
 @pytest.fixture
-def mock_oracle_config(mock_source_chain_config, mock_target_chain_config, mock_monitoring_config):
+def mock_push_oracle_config():
+    """Create a mock push oracle config with short intervals for testing."""
+    return PushOracleConfig(
+        push_interval=2,  # Short interval for testing
+        batch_size=20,
+    )
+
+
+@pytest.fixture
+def mock_oracle_config(mock_common_config, mock_push_oracle_config):
     """Create a mock oracle config for push oracle mode."""
     return OracleConfig(
-        source_chain=mock_source_chain_config,
-        target_chain=mock_target_chain_config,
-        monitoring=mock_monitoring_config,
+        common_config=mock_common_config,
+        oracle_mode=OracleMode.PUSH,
+        mode_config=mock_push_oracle_config,
         local_mode=True,
         local_private_key="0x" + "a" * 64
     )
 
 
 @pytest.fixture
-def mock_source_chain_config_watcher():
-    """Create a mock source chain config for watcher mode."""
-    return SourceChainConfig(
-        rpc_url="http://localhost:8545",
-        contract_address=None,  # None for watcher mode
-        chain_id=1337,
-        watch_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7", "0x1234567890123456789012345678901234567890"]
+def mock_watcher_config():
+    """Create a mock watcher config for watcher mode."""
+    return WatcherConfig(
+        watch_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7", "0x1234567890123456789012345678901234567890"],
+        scan_interval=5,
     )
 
 
 @pytest.fixture
-def mock_oracle_config_watcher(mock_source_chain_config_watcher, mock_target_chain_config, mock_monitoring_config):
+def mock_oracle_config_watcher(mock_common_config, mock_watcher_config):
     """Create a mock oracle config for watcher mode."""
     return OracleConfig(
-        source_chain=mock_source_chain_config_watcher,
-        target_chain=mock_target_chain_config,
-        monitoring=mock_monitoring_config,
+        common_config=mock_common_config,
+        oracle_mode=OracleMode.WATCHER,
+        mode_config=mock_watcher_config,
         local_mode=True,
         local_private_key="0x" + "a" * 64
     )
@@ -106,8 +96,8 @@ class TestPushOracleMode:
     @pytest.mark.asyncio
     async def test_push_oracle_config_detection(self, mock_oracle_config):
         """Test that push oracle mode is correctly detected from config."""
-        assert mock_oracle_config.source_chain.is_push_oracle is True
-        assert mock_oracle_config.source_chain.contract_address is None
+        assert mock_oracle_config.oracle_mode == OracleMode.PUSH
+        assert isinstance(mock_oracle_config.mode_config, PushOracleConfig)
 
     @pytest.mark.asyncio
     async def test_push_oracle_initialization(self, mock_oracle_config):
@@ -139,7 +129,7 @@ class TestPushOracleMode:
                         oracle = await HeaderOracle.create(mock_oracle_config)
                         
                         # Verify push oracle mode initialization
-                        assert oracle.config.source_chain.is_push_oracle is True
+                        assert oracle.config.oracle_mode == OracleMode.PUSH
                         assert oracle.event_listener is None  # No event listener in push mode
                         assert oracle.block_requester_abi is None  # No ABI needed
 
@@ -413,7 +403,7 @@ class TestPushOracleMode:
         """Test the push mode loop with interruption."""
         oracle = HeaderOracle()
         oracle.config = MagicMock()
-        oracle.config.monitoring.push_interval = 0.1  # Very short for testing
+        oracle.config.mode_config.push_interval = 0.1  # Very short for testing
         
         # Mock push_latest_block_header
         oracle.push_latest_block_header = AsyncMock()
@@ -468,33 +458,33 @@ class TestWatcherMode:
     @pytest.mark.asyncio
     async def test_watcher_config_detection(self, mock_oracle_config_watcher):
         """Test that watcher mode is correctly detected from config."""
-        assert mock_oracle_config_watcher.source_chain.is_watcher_mode is True
-        assert mock_oracle_config_watcher.source_chain.contract_address is None
-        assert len(mock_oracle_config_watcher.source_chain.watch_addresses) == 2
+        assert mock_oracle_config_watcher.oracle_mode == OracleMode.WATCHER
+        assert isinstance(mock_oracle_config_watcher.mode_config, WatcherConfig)
+        assert len(mock_oracle_config_watcher.mode_config.watch_addresses) == 2
 
     @pytest.mark.asyncio
     async def test_watcher_config_validation(self):
         """Test watcher config validates addresses."""
         # Valid addresses should work
-        config = SourceChainConfig(
-            rpc_url="http://localhost:8545",
-            watch_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"]
+        config = WatcherConfig(
+            watch_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"],
+            scan_interval=5,
         )
-        assert config.is_watcher_mode is True
+        assert len(config.watch_addresses) == 1
         assert config.watch_addresses[0] == "0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"
 
         # Invalid address should raise error
         with pytest.raises(ValueError, match="Invalid watch address"):
-            SourceChainConfig(
-                rpc_url="http://localhost:8545",
-                watch_addresses=["invalid-address"]
+            WatcherConfig(
+                watch_addresses=["invalid-address"],
+                scan_interval=5,
             )
 
         # Empty list should raise error
         with pytest.raises(ValueError, match="Watch addresses list cannot be empty"):
-            SourceChainConfig(
-                rpc_url="http://localhost:8545",
-                watch_addresses=[]
+            WatcherConfig(
+                watch_addresses=[],
+                scan_interval=5,
             )
 
     @pytest.mark.asyncio
@@ -527,7 +517,7 @@ class TestWatcherMode:
                         oracle = await HeaderOracle.create(mock_oracle_config_watcher)
                         
                         # Verify watcher mode initialization
-                        assert oracle.config.source_chain.is_watcher_mode is True
+                        assert oracle.config.oracle_mode == OracleMode.WATCHER
                         assert oracle.event_listener is None  # No event listener in watcher mode
                         assert oracle.block_requester_abi is None  # No ABI needed
                         assert hasattr(oracle, 'watched_addresses')
@@ -665,7 +655,7 @@ class TestWatcherMode:
         oracle = HeaderOracle()
         oracle.watched_addresses = {"0x742d35cc6634c0532925a3b844bc9e7595f0beb7"}
         oracle.config = MagicMock()
-        oracle.config.monitoring.lookback_blocks = 10
+        oracle.config.mode_config.lookback_blocks = 10
         
         # Mock BlockSubmitter
         mock_block_submitter = MagicMock()
@@ -703,7 +693,7 @@ class TestWatcherMode:
         oracle = HeaderOracle()
         oracle.watched_addresses = {"0x742d35cc6634c0532925a3b844bc9e7595f0beb7"}
         oracle.config = MagicMock()
-        oracle.config.monitoring.lookback_blocks = 10
+        oracle.config.mode_config.lookback_blocks = 10
         
         # Mock BlockSubmitter
         mock_block_submitter = MagicMock()
@@ -743,7 +733,7 @@ class TestWatcherMode:
         oracle = HeaderOracle()
         oracle.watched_addresses = {"0x742d35cc6634c0532925a3b844bc9e7595f0beb7"}
         oracle.config = MagicMock()
-        oracle.config.monitoring.lookback_blocks = 10
+        oracle.config.mode_config.lookback_blocks = 10
         
         # Mock BlockSubmitter
         mock_block_submitter = MagicMock()
@@ -770,7 +760,7 @@ class TestWatcherMode:
         oracle = HeaderOracle()
         oracle.watched_addresses = {"0x742d35cc6634c0532925a3b844bc9e7595f0beb7"}
         oracle.config = MagicMock()
-        oracle.config.monitoring.lookback_blocks = 10
+        oracle.config.mode_config.lookback_blocks = 10
         
         # Mock BlockSubmitter
         mock_block_submitter = MagicMock()
@@ -824,8 +814,8 @@ class TestWatcherMode:
         """Test the watcher mode loop with interruption."""
         oracle = HeaderOracle()
         oracle.config = MagicMock()
-        oracle.config.monitoring.push_interval = 0.1  # Very short for testing
-        oracle.config.source_chain.watch_addresses = ["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"]
+        oracle.config.mode_config.push_interval = 0.1  # Very short for testing
+        oracle.config.mode_config.watch_addresses = ["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"]
         
         # Mock watch_addresses_for_interactions
         oracle.watch_addresses_for_interactions = AsyncMock()
