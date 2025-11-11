@@ -12,6 +12,11 @@ from web3.contract import Contract
 from web3.types import TxParams, TxReceipt, Wei
 
 from .utils.contract_utility import ContractUtility
+from .utils.retry_utility import (
+    CircuitBreaker,
+    RetryConfig,
+    retry_with_backoff,
+)
 from .utils.rofl_utility import RoflUtility
 
 logger = logging.getLogger(__name__)
@@ -31,6 +36,8 @@ class BlockSubmitter:
         source_chain_id: int,
         contract_address: str,
         request_timeout: int = 30,
+        circuit_breaker: CircuitBreaker | None = None,
+        retry_config: RetryConfig | None = None,
     ) -> None:
         """
         Initialize the BlockSubmitter.
@@ -41,12 +48,16 @@ class BlockSubmitter:
             source_chain_id: Chain ID of the source chain
             contract_address: Address of the ROFLAdapter/MockAdapter contract
             request_timeout: Timeout for transaction receipts in seconds (default: 30)
+            circuit_breaker: Optional circuit breaker for resilience
+            retry_config: Optional retry configuration
         """
         self.contract_util: ContractUtility = contract_util
         self.rofl_util: RoflUtility | None = rofl_util
         self.source_chain_id: int = source_chain_id
         self.contract_address: str = Web3.to_checksum_address(contract_address)
         self.request_timeout: int = request_timeout
+        self.circuit_breaker = circuit_breaker
+        self.retry_config = retry_config or RetryConfig()
 
         # Load the appropriate ABI based on mode
         if rofl_util:
@@ -156,7 +167,7 @@ class BlockSubmitter:
         self, block_number: int, block_hash: str
     ) -> bool:
         """
-        Submit a block header to the adapter contract.
+        Submit a block header to the adapter contract with retry logic.
 
         This method handles both local mode (MockAdapter with setHashes) and
         production mode (ROFLAdapter with storeBlockHeader) based on whether
@@ -169,11 +180,11 @@ class BlockSubmitter:
         Returns:
             True if submission was successful, False otherwise
         """
-        try:
-            logger.info(
-                f"Submitting block header for block {block_number}, hash: {block_hash}"
-            )
+        logger.info(
+            f"Submitting block header for block {block_number}, hash: {block_hash}"
+        )
 
+        async def _submit() -> bool:
             try:
                 if self.rofl_util:
                     # ROFL mode - use ROFLAdapter's storeBlockHeader with oracle key
@@ -237,9 +248,18 @@ class BlockSubmitter:
                     )
                     return True
                 else:
-                    logger.error(f"Transaction submission failed: {tx_error}")
-                    return False
+                    raise
 
+        try:
+            return await retry_with_backoff(
+                _submit,
+                config=self.retry_config,
+                circuit_breaker=self.circuit_breaker,
+                error_types=(Exception,),
+            )
         except Exception as e:
-            logger.error(f"Error submitting block header: {e}", exc_info=True)
+            logger.error(
+                f"Error submitting block header after retries: {e}",
+                exc_info=True,
+            )
             return False

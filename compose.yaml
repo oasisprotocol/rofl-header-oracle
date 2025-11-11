@@ -6,6 +6,8 @@ services:
     image: ghcr.io/rube-de/rofl-header-oracle:latest
     platform: linux/amd64
     container_name: rofl_header_oracle
+    ports:
+      - "8080:8080"  # Health check endpoint
     environment:
       # Python configuration
       PYTHONUNBUFFERED: 1  # Disable output buffering for immediate log visibility
@@ -19,6 +21,10 @@ services:
 
       # Oracle mode: event_listener, push, or watcher
       ORACLE_MODE: ${ORACLE_MODE:-event_listener}
+
+      # Logging configuration
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+      JSON_LOGS: ${JSON_LOGS:-false}  # Enable JSON-formatted structured logging
 
       # Event Listener Mode Configuration (ORACLE_MODE=event_listener)
       SOURCE_CONTRACT_ADDRESS: ${SOURCE_CONTRACT_ADDRESS:-}  # Required for event_listener mode

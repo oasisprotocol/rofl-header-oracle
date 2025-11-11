@@ -46,6 +46,8 @@ The oracle supports three modes: **event_listener**, **push**, and **watcher**. 
 | `REQUEST_TIMEOUT`      | HTTP request timeout (seconds)                           | `30`                                 | No       |
 | `RETRY_COUNT`          | Number of retry attempts for operations                  | `3`                                  | No       |
 | `ORACLE_MODE`          | Operating mode: `event_listener`, `push`, or `watcher`   | `event_listener`                     | No       |
+| `LOG_LEVEL`            | Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL     | `INFO`                               | No       |
+| `JSON_LOGS`            | Enable JSON-formatted structured logging                 | `false`                              | No       |
 
 ---
 
@@ -195,6 +197,52 @@ LOCAL_PRIVATE_KEY=0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab
 3. **Block Fetching**: Retrieves requested block headers from source chain
 4. **Header Submission**: Submits headers to Sapphire via ROFL
 5. **Continuous Operation**: Runs in an infinite loop with configurable intervals
+
+## Monitoring & Health Checks
+
+The oracle includes built-in health check endpoints for container orchestration
+and monitoring:
+
+### Health Endpoints
+
+- **`/health`** - Overall system health with component status
+- **`/health/live`** - Liveness probe (is the service running)
+- **`/health/ready`** - Readiness probe (is the service ready to handle work)
+
+Health endpoints are exposed on port 8080 by default.
+
+### Example Health Check
+
+```bash
+# Check overall health
+curl http://localhost:8080/health
+
+# Liveness probe (for Kubernetes/Docker)
+curl http://localhost:8080/health/live
+
+# Readiness probe
+curl http://localhost:8080/health/ready
+```
+
+### Error Handling & Resilience
+
+The oracle includes production-grade error handling:
+
+- **Exponential Backoff**: Automatic retry with exponential backoff for transient failures
+- **Circuit Breakers**: Prevents cascading failures when RPCs are down
+- **Retry Logic**: Configurable retry attempts (via `RETRY_COUNT`) for all critical operations
+- **Graceful Degradation**: Continues operating even with degraded connectivity
+
+### Structured Logging
+
+Enable JSON-formatted structured logging for production environments:
+
+```bash
+export JSON_LOGS=true
+```
+
+This outputs logs in JSON format for easier parsing by log aggregation systems
+(ELK, Splunk, DataDog, etc.).
 
 ## Development
 

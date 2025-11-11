@@ -7,6 +7,8 @@ services:
     platform: linux/amd64
     container_name: rofl_header_oracle
     entrypoint: /bin/sh -c 'uv run python -m rofl_oracle --local --log-level DEBUG'
+    ports:
+      - "8080:8080"  # Health check endpoint
     environment:
       # Python configuration
       PYTHONUNBUFFERED: 1  # Disable output buffering for immediate log visibility
@@ -20,6 +22,10 @@ services:
 
       # Oracle mode: event_listener, push, or watcher
       ORACLE_MODE: ${ORACLE_MODE:-event_listener}
+
+      # Logging configuration
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}  # DEBUG mode for local testing
+      JSON_LOGS: ${JSON_LOGS:-false}  # Enable JSON-formatted structured logging
 
       # Event Listener Mode Configuration (ORACLE_MODE=event_listener)
       SOURCE_CONTRACT_ADDRESS: ${SOURCE_CONTRACT_ADDRESS:-}  # Required for event_listener mode

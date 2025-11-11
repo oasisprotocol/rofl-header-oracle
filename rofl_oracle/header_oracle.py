@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from asyncio import sleep
 from typing import Any
@@ -13,8 +14,16 @@ from .config import (
     WatcherModeConfig,
 )
 from .event_processor import EventProcessor
+from .health_check import HealthCheckServer
 from .utils.contract_utility import ContractUtility
+from .utils.logging_utility import AsyncPerformanceTimer
 from .utils.polling_event_listener import PollingEventListener
+from .utils.retry_utility import (
+    CircuitBreaker,
+    CircuitBreakerConfig,
+    RetryConfig,
+    retry_with_backoff,
+)
 from .utils.rofl_utility import RoflUtility
 
 logger = logging.getLogger(__name__)
@@ -52,6 +61,40 @@ class HeaderOracle:
         try:
             # Log configuration
             self.config.log_config()
+
+            # Initialize circuit breakers for resilience
+            self.source_rpc_circuit = CircuitBreaker(
+                CircuitBreakerConfig(
+                    failure_threshold=5,
+                    success_threshold=2,
+                    timeout=60.0,
+                    window_size=10,
+                ),
+                name="source_rpc",
+            )
+            self.target_rpc_circuit = CircuitBreaker(
+                CircuitBreakerConfig(
+                    failure_threshold=5,
+                    success_threshold=2,
+                    timeout=60.0,
+                    window_size=10,
+                ),
+                name="target_rpc",
+            )
+
+            # Configure retry behavior
+            self.retry_config = RetryConfig(
+                max_attempts=config.common_config.retry_count,
+                initial_delay=1.0,
+                max_delay=30.0,
+                exponential_base=2.0,
+                jitter=True,
+            )
+
+            # Initialize health check server
+            self.health_server = HealthCheckServer(
+                port=8080, oracle_instance=self
+            )
 
             if not config.local_mode:
                 # Initialize ROFL utility
@@ -111,6 +154,8 @@ class HeaderOracle:
                 source_chain_id=self.source_chain_id,
                 contract_address=config.common_config.target_contract_address,
                 request_timeout=config.common_config.request_timeout,
+                circuit_breaker=self.target_rpc_circuit,
+                retry_config=self.retry_config,
             )
             logger.debug("Block submitter initialized")
 
@@ -201,16 +246,29 @@ class HeaderOracle:
 
     def fetch_block_by_number(self, block_number: int) -> BlockData | None:
         """
-        Fetch a specific block by number from the source chain.
+        Fetch a specific block by number from the source chain with retry logic.
 
         :param block_number: The block number to fetch
         :return: Block data or None if fetch fails
         """
         try:
-            block = self.source_w3.eth.get_block(block_number)
+
+            async def _fetch() -> BlockData:
+                return self.source_w3.eth.get_block(block_number)
+
+            block = asyncio.get_event_loop().run_until_complete(
+                retry_with_backoff(
+                    _fetch,
+                    config=self.retry_config,
+                    circuit_breaker=self.source_rpc_circuit,
+                    error_types=(Exception,),
+                )
+            )
             return block
         except Exception as e:
-            logger.error(f"Error fetching block {block_number}: {e}")
+            logger.error(
+                f"Error fetching block {block_number} after retries: {e}"
+            )
             return None
 
     async def process_block_header_event(self, event_data: Any) -> None:
@@ -223,87 +281,23 @@ class HeaderOracle:
 
         :param event_data: Event data from the event listener
         """
-        try:
-            # Use EventProcessor to parse, validate, and check for duplicates
-            event = await self.event_processor.process_event(event_data)
+        async with AsyncPerformanceTimer("process_block_header_event"):
+            try:
+                # Use EventProcessor to parse, validate, and check for duplicates
+                event = await self.event_processor.process_event(event_data)
 
-            if not event:
-                # Event was filtered, duplicate, or invalid
-                return
+                if not event:
+                    # Event was filtered, duplicate, or invalid
+                    return
 
-            logger.info("Processing validated BlockHeaderRequested event:")
-            logger.info(f"  Chain ID: {event.chain_id}")
-            logger.info(f"  Requested Block: {event.block_number}")
-            logger.info(f"  Requester: {event.requester}")
-            logger.info(f"  Event Block: {event.event_block_number}")
+                logger.info("Processing validated BlockHeaderRequested event:")
+                logger.info(f"  Chain ID: {event.chain_id}")
+                logger.info(f"  Requested Block: {event.block_number}")
+                logger.info(f"  Requester: {event.requester}")
+                logger.info(f"  Event Block: {event.event_block_number}")
 
-            # Fetch the requested block
-            block = self.fetch_block_by_number(event.block_number)
-
-            if block:
-                block_hash = block.get("hash")
-
-                if block_hash is not None:
-                    # Convert block_hash to hex string with 0x prefix
-                    block_hash_hex = (
-                        block_hash.hex()
-                        if isinstance(block_hash, bytes)
-                        else block_hash
-                    )
-                    if not block_hash_hex.startswith("0x"):
-                        block_hash_hex = "0x" + block_hash_hex
-
-                    # Submit the block header using BlockSubmitter
-                    success = await self.block_submitter.submit_block_header(
-                        event.block_number, block_hash_hex
-                    )
-
-                    if success:
-                        logger.info(
-                            f"Successfully submitted block {event.block_number} header to Sapphire"
-                        )
-                    else:
-                        logger.error(
-                            f"Failed to submit block {event.block_number} header"
-                        )
-            else:
-                logger.error(f"Could not fetch block {event.block_number}")
-
-            # Periodically log metrics
-            if self.event_processor.events_processed % 10 == 0:
-                self.event_processor.log_metrics()
-
-        except Exception as e:
-            logger.error(
-                f"Error processing BlockHeaderRequested event: {e}",
-                exc_info=True,
-            )
-
-    async def push_latest_block_header(self) -> None:
-        """
-        Push the latest block header from the source chain to the target chain.
-        Used in push oracle mode.
-        """
-        try:
-            # Get the latest block from source chain
-            latest_block_number = self.source_w3.eth.block_number
-            last_stored_block = (
-                await self.block_submitter.get_latest_block_number()
-            )
-
-            if last_stored_block is None or last_stored_block == 0:
-                next_block_to_push = latest_block_number
-                end_block = latest_block_number
-            else:
-                next_block_to_push = last_stored_block + 1
-                end_block = min(latest_block_number, last_stored_block + 20)
-
-            while next_block_to_push <= end_block:
-                logger.info(
-                    f"Pushing latest block header: {next_block_to_push}"
-                )
-                # Fetch the block at the current contract block number
-                block = self.fetch_block_by_number(next_block_to_push)
+                # Fetch the requested block
+                block = self.fetch_block_by_number(event.block_number)
 
                 if block:
                     block_hash = block.get("hash")
@@ -321,34 +315,104 @@ class HeaderOracle:
                         # Submit the block header using BlockSubmitter
                         success = (
                             await self.block_submitter.submit_block_header(
-                                next_block_to_push, block_hash_hex
+                                event.block_number, block_hash_hex
                             )
                         )
 
                         if success:
                             logger.info(
-                                f"Successfully pushed block {next_block_to_push} header to Sapphire"
+                                f"Successfully submitted block {event.block_number} header to Sapphire"
                             )
-                            next_block_to_push += 1
                         else:
                             logger.error(
-                                f"Failed to push block {next_block_to_push} header"
+                                f"Failed to submit block {event.block_number} header"
+                            )
+                else:
+                    logger.error(f"Could not fetch block {event.block_number}")
+
+                # Periodically log metrics
+                if self.event_processor.events_processed % 10 == 0:
+                    self.event_processor.log_metrics()
+
+            except Exception as e:
+                logger.error(
+                    f"Error processing BlockHeaderRequested event: {e}",
+                    exc_info=True,
+                )
+
+    async def push_latest_block_header(self) -> None:
+        """
+        Push the latest block header from the source chain to the target chain.
+        Used in push oracle mode.
+        """
+        async with AsyncPerformanceTimer("push_latest_block_header"):
+            try:
+                # Get the latest block from source chain
+                latest_block_number = self.source_w3.eth.block_number
+                last_stored_block = (
+                    await self.block_submitter.get_latest_block_number()
+                )
+
+                if last_stored_block is None or last_stored_block == 0:
+                    next_block_to_push = latest_block_number
+                    end_block = latest_block_number
+                else:
+                    next_block_to_push = last_stored_block + 1
+                    end_block = min(latest_block_number, last_stored_block + 20)
+
+                while next_block_to_push <= end_block:
+                    logger.info(
+                        f"Pushing latest block header: {next_block_to_push}"
+                    )
+                    # Fetch the block at the current contract block number
+                    block = self.fetch_block_by_number(next_block_to_push)
+
+                    if block:
+                        block_hash = block.get("hash")
+
+                        if block_hash is not None:
+                            # Convert block_hash to hex string with 0x prefix
+                            block_hash_hex = (
+                                block_hash.hex()
+                                if isinstance(block_hash, bytes)
+                                else block_hash
+                            )
+                            if not block_hash_hex.startswith("0x"):
+                                block_hash_hex = "0x" + block_hash_hex
+
+                            # Submit the block header using BlockSubmitter
+                            success = (
+                                await self.block_submitter.submit_block_header(
+                                    next_block_to_push, block_hash_hex
+                                )
+                            )
+
+                            if success:
+                                logger.info(
+                                    f"Successfully pushed block {next_block_to_push} header to Sapphire"
+                                )
+                                next_block_to_push += 1
+                            else:
+                                logger.error(
+                                    f"Failed to push block {next_block_to_push} header"
+                                )
+                                break
+                        else:
+                            logger.error(
+                                f"Block {next_block_to_push} has no hash"
                             )
                             break
                     else:
-                        logger.error(f"Block {next_block_to_push} has no hash")
+                        logger.error(
+                            f"Could not fetch latest block {next_block_to_push}"
+                        )
                         break
-                else:
-                    logger.error(
-                        f"Could not fetch latest block {next_block_to_push}"
-                    )
-                    break
 
-        except Exception as e:
-            logger.error(
-                f"Error pushing latest block header: {e}",
-                exc_info=True,
-            )
+            except Exception as e:
+                logger.error(
+                    f"Error pushing latest block header: {e}",
+                    exc_info=True,
+                )
 
     async def watch_addresses_for_interactions(self) -> None:
         """
@@ -611,6 +675,8 @@ class HeaderOracle:
         logger.info("Shutting down HeaderOracle...")
         if self.event_listener:
             await self.event_listener.stop()
+        if hasattr(self, "health_server"):
+            await self.health_server.stop()
         logger.info("HeaderOracle shutdown complete")
 
     async def run(self) -> None:
@@ -620,23 +686,36 @@ class HeaderOracle:
         """
         logger.info("Starting HeaderOracle...")
 
-        if self.config.oracle_mode == OracleMode.WATCHER:
-            assert isinstance(self.config.mode_config, WatcherModeConfig)
-            logger.info(
-                f"Running in watcher mode - monitoring {len(self.config.mode_config.watch_addresses)} address(es)"
-            )
-            await self._run_watcher_mode()
-        elif self.config.oracle_mode == OracleMode.PUSH:
-            logger.info(
-                "Running in push oracle mode - pushing latest block headers"
-            )
-            await self._run_push_mode()
-        else:
-            assert isinstance(self.config.mode_config, EventListenerModeConfig)
-            logger.info(
-                f"Running in event listener mode - polling for BlockHeaderRequested events from {self.config.mode_config.contract_address}"
-            )
-            await self._run_event_listener_mode()
+        try:
+            # Start health check server
+            if hasattr(self, "health_server"):
+                await self.health_server.start()
+                logger.info(
+                    "Health check server running on http://0.0.0.0:8080/health"
+                )
+
+            if self.config.oracle_mode == OracleMode.WATCHER:
+                assert isinstance(self.config.mode_config, WatcherModeConfig)
+                logger.info(
+                    f"Running in watcher mode - monitoring {len(self.config.mode_config.watch_addresses)} address(es)"
+                )
+                await self._run_watcher_mode()
+            elif self.config.oracle_mode == OracleMode.PUSH:
+                logger.info(
+                    "Running in push oracle mode - pushing latest block headers"
+                )
+                await self._run_push_mode()
+            else:
+                assert isinstance(
+                    self.config.mode_config, EventListenerModeConfig
+                )
+                logger.info(
+                    f"Running in event listener mode - polling for BlockHeaderRequested events from {self.config.mode_config.contract_address}"
+                )
+                await self._run_event_listener_mode()
+        finally:
+            if hasattr(self, "health_server"):
+                await self.health_server.stop()
 
     async def _run_push_mode(self) -> None:
         """Run in push oracle mode - continuously push latest block headers."""
