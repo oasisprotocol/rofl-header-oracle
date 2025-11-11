@@ -89,7 +89,7 @@ class TestCommonConfig:
         with pytest.raises(ValueError, match="Source RPC URL is required"):
             CommonConfig(
                 source_rpc_url="",
-                source_chain_id=None,
+                source_chain_id="None",
                 target_rpc_url="https://sapphire.oasis.io",
                 request_timeout=30,
                 retry_count=3,
@@ -108,7 +108,7 @@ class TestCommonConfig:
 
     def test_invalid_contract_address(self):
         """Test that invalid contract address raises an error."""
-        with pytest.raises(ValueError, match="Invalid source contract address"):
+        with pytest.raises(ValueError, match="Invalid target contract address: invalid-address"):
             CommonConfig(
                 source_rpc_url="https://test.rpc",
                 source_chain_id=None,
@@ -121,7 +121,7 @@ class TestCommonConfig:
     def test_missing_contract_address(self):
         """Test that missing contract address raises an error."""
         with pytest.raises(
-            ValueError, match=r"Source contract address cannot be empty string \(SOURCE_CONTRACT_ADDRESS\). Use None for push oracle or watcher mode\."
+            ValueError, match=r"Target contract address is required \(ROFL_ADAPTER_ADDRESS\)"
         ):
             CommonConfig(
                 source_rpc_url="https://test.rpc",
@@ -129,7 +129,7 @@ class TestCommonConfig:
                 target_rpc_url="https://sapphire.oasis.io",
                 request_timeout=30,
                 retry_count=3,
-                target_contract_address="",
+                target_contract_address=None,
             )
 
     def test_websocket_rpc_url(self):
@@ -181,7 +181,7 @@ class TestWatcherModeConfig:
 
         assert len(config.watch_addresses) == 2
         assert config.watch_addresses[0] == "0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d"
-        assert config.watch_addresses[1] == "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0"
+        assert config.watch_addresses[1] == "0x742D35CC6634c0532925A3b844BC9E7595F0BEb0"
 
     def test_checksum_watch_addresses(self):
         """Test that watch addresses are converted to checksum format."""
@@ -196,7 +196,7 @@ class TestWatcherModeConfig:
 
         # Should be converted to checksum format
         assert config.watch_addresses[0] == "0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d"
-        assert config.watch_addresses[1] == "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0"
+        assert config.watch_addresses[1] == "0x742D35CC6634c0532925A3b844BC9E7595F0BEb0"
 
     def test_default_batch_size(self):
         """Test default batch size."""
@@ -910,7 +910,7 @@ class TestOracleConfig:
 
         assert config.common_config.source_rpc_url == "https://test.rpc"
         assert config.common_config.target_rpc_url == "https://testnet.sapphire.oasis.io"
-        assert config.common_config.target_contract_address == "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0"
+        assert config.common_config.target_contract_address == "0x742D35CC6634c0532925A3b844BC9E7595F0BEb0"
         assert config.common_config.request_timeout == 30
         assert config.common_config.retry_count == 3
         
@@ -971,7 +971,7 @@ class TestOracleConfig:
         assert isinstance(config.mode_config, WatcherModeConfig)
         assert len(config.mode_config.watch_addresses) == 2
         assert config.mode_config.watch_addresses[0] == "0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d"
-        assert config.mode_config.watch_addresses[1] == "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0"
+        assert config.mode_config.watch_addresses[1] == "0x742D35CC6634c0532925A3b844BC9E7595F0BEb0"
         assert config.mode_config.scan_interval == 90
         assert config.mode_config.batch_size == 75
         assert config.mode_config.lookback_blocks == 200
@@ -1008,7 +1008,7 @@ class TestOracleConfig:
     )
     def test_from_env_missing_source_contract_for_event_listener(self):
         """Test that event listener mode requires source contract address."""
-        with pytest.raises(ValueError, match="SOURCE_CONTRACT_ADDRESS is required for event listener mode"):
+        with pytest.raises(ValueError, match="Contract address for event listener mode cannot be empty"):
             OracleConfig.from_env()
 
     @patch.dict(
@@ -1090,7 +1090,7 @@ class TestOracleConfig:
         assert "EVENT LISTENER" in log_text
         assert "https://test.rpc" in log_text
         assert "https://testnet.sapphire.oasis.io" in log_text
-        assert "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0" in log_text
+        assert "0x742D35CC6634c0532925A3b844BC9E7595F0BEb0" in log_text
         assert "15 seconds" in log_text
         assert "Mode: LOCAL" in log_text
         assert "Local Key: [CONFIGURED]" in log_text

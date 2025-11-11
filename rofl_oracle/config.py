@@ -139,7 +139,7 @@ class CommonConfig:
     """Configuration common to all oracle modes."""
     
     source_rpc_url: str           # HTTP(S) RPC endpoint for the source chain
-    source_chain_id: int  # Chain ID for the source chain (optional)
+    source_chain_id: int          # Chain ID for the source chain (optional)
     target_rpc_url: str           # HTTP(S) RPC endpoint for the target chain
     request_timeout: int          # HTTP request timeout in seconds
     retry_count: int              # retry attempts for operations
