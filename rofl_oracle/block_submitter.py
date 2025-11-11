@@ -76,57 +76,62 @@ class BlockSubmitter:
     async def get_registered_oracle(self) -> str | None:
         """
         Get the currently registered oracle address from the ROFLAdapter contract.
-        
+
         Returns:
             The registered oracle address, or None if not set
         """
         try:
             if not self.rofl_util:
                 return None
-                
+
             oracle_address = self.contract.functions.ROFL_ORACLE().call()
-            return oracle_address if oracle_address != "0x0000000000000000000000000000000000000000" else None
+            return (
+                oracle_address
+                if oracle_address
+                != "0x0000000000000000000000000000000000000000"
+                else None
+            )
         except Exception as e:
             logger.error(f"Error getting registered oracle: {e}")
             return None
-    
+
     async def register_oracle(self) -> bool:
         """
         Register the oracle address with the ROFLAdapter contract.
         Only needed in ROFL mode on first initialization.
         Uses ROFL's authority to call setOracle.
-        
+
         Returns:
             True if registration was successful, False otherwise
         """
         if not self.rofl_util:
             logger.debug("Oracle registration not needed in local mode")
             return True
-        
+
         try:
             oracle_address = self.contract_util.w3.eth.default_account
             logger.info(f"Registering oracle address: {oracle_address}")
-            
+
             tx_params: TxParams = {
                 "from": "0x0000000000000000000000000000000000000000",  # ROFL will override
                 "gas": 100000,
                 "gasPrice": self.contract_util.w3.eth.gas_price,
                 "value": Wei(0),
             }
-            
+
             tx_data: TxParams = self.contract.functions.setOracle(
                 oracle_address
             ).build_transaction(tx_params)
-            
+
             logger.debug("Submitting oracle registration via ROFL...")
-            
+
             if await self.rofl_util.submit_tx(tx_data):
                 logger.info(f"Oracle {oracle_address} registered successfully")
                 return True
             else:
                 logger.error(f"Failed to register oracle {oracle_address}")
                 return False
-                
+
         except Exception as e:
             logger.error(f"Error registering oracle: {e}", exc_info=True)
             return False
@@ -134,17 +139,19 @@ class BlockSubmitter:
     async def get_latest_block_number(self) -> int | None:
         """
         Get the latest stored block number for the source chain from the contract.
-        
+
         Returns:
             The latest stored block number, or None if not set or on error
         """
         try:
-            latest_block_number = self.contract.functions.lastStoredBlock(self.source_chain_id).call()
+            latest_block_number = self.contract.functions.lastStoredBlock(
+                self.source_chain_id
+            ).call()
             return latest_block_number if latest_block_number != 0 else None
         except Exception as e:
             logger.error(f"Error getting latest block number: {e}")
             return None
-    
+
     async def submit_block_header(
         self, block_number: int, block_hash: str
     ) -> bool:
@@ -173,7 +180,7 @@ class BlockSubmitter:
                     logger.info(
                         "ROFL MODE: Submitting transaction with oracle key signature"
                     )
-                    
+
                     tx_hash = self.contract.functions.storeBlockHeader(
                         self.source_chain_id, block_number, block_hash
                     ).transact(
@@ -187,7 +194,7 @@ class BlockSubmitter:
                     logger.info(
                         "LOCAL MODE: Submitting transaction directly to MockAdapter"
                     )
-                    
+
                     tx_hash = self.contract.functions.setHashes(
                         self.source_chain_id,
                         [int(block_number)],
@@ -203,8 +210,10 @@ class BlockSubmitter:
                     f"Transaction submitted successfully: {Web3.to_hex(tx_hash)}"
                 )
 
-                receipt: TxReceipt = self.contract_util.w3.eth.wait_for_transaction_receipt(
-                    tx_hash, timeout=self.request_timeout
+                receipt: TxReceipt = (
+                    self.contract_util.w3.eth.wait_for_transaction_receipt(
+                        tx_hash, timeout=self.request_timeout
+                    )
                 )
 
                 if (status := receipt.get("status", 0)) == 1:
@@ -213,16 +222,13 @@ class BlockSubmitter:
                     )
                     return True
                 else:
-                    logger.error(
-                        f"Transaction failed with status={status}"
-                    )
+                    logger.error(f"Transaction failed with status={status}")
                     return False
-                    
+
             except Exception as tx_error:
                 error_str = str(tx_error)
                 if self.rofl_util and (
-                    "ReadTimeout" in error_str
-                    or "timeout" in error_str.lower()
+                    "ReadTimeout" in error_str or "timeout" in error_str.lower()
                 ):
                     logger.warning(
                         f"Transaction submission timed out for block {block_number} - "

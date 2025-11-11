@@ -8,15 +8,17 @@ from unittest.mock import patch
 import pytest
 
 from rofl_oracle.config import (
-    OracleConfig,
     CommonConfig,
-    WatcherModeConfig,
+    EventListenerModeConfig,
+    OracleConfig,
     PushModeConfig,
-    EventListenerModeConfig
+    WatcherModeConfig,
 )
+
 
 class TestCommonConfig:
     """Tests for CommonConfig."""
+
     #     source_rpc_url: str           # HTTP(S) RPC endpoint for the source chain
     # source_chain_id: int  # Chain ID for the source chain (optional)
     # target_rpc_url: str           # HTTP(S) RPC endpoint for the target chain
@@ -95,7 +97,7 @@ class TestCommonConfig:
                 retry_count=3,
                 target_contract_address="0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d",
             )
-        
+
         with pytest.raises(ValueError, match="Target RPC URL is required"):
             CommonConfig(
                 source_rpc_url="https://test.rpc",
@@ -108,7 +110,9 @@ class TestCommonConfig:
 
     def test_invalid_contract_address(self):
         """Test that invalid contract address raises an error."""
-        with pytest.raises(ValueError, match="Invalid target contract address: invalid-address"):
+        with pytest.raises(
+            ValueError, match="Invalid target contract address: invalid-address"
+        ):
             CommonConfig(
                 source_rpc_url="https://test.rpc",
                 source_chain_id=None,
@@ -121,7 +125,8 @@ class TestCommonConfig:
     def test_missing_contract_address(self):
         """Test that missing contract address raises an error."""
         with pytest.raises(
-            ValueError, match=r"Target contract address is required \(ROFL_ADAPTER_ADDRESS\)"
+            ValueError,
+            match=r"Target contract address is required \(ROFL_ADAPTER_ADDRESS\)",
         ):
             CommonConfig(
                 source_rpc_url="https://test.rpc",
@@ -143,11 +148,12 @@ class TestCommonConfig:
             target_contract_address="0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d",
         )
 
-
         assert config.source_rpc_url == "wss://ethereum.publicnode.com"
+
 
 class TestWatcherModeConfig:
     """Tests for WatcherModeConfig."""
+
     # watch_addresses: list[str]  # Addresses to watch in watcher mode
     # scan_interval: int          # seconds between scanning for interactions
     # batch_size: int = 50        # max blocks to scan per iteration
@@ -163,7 +169,10 @@ class TestWatcherModeConfig:
         )
 
         assert len(config.watch_addresses) == 1
-        assert config.watch_addresses[0] == "0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d"
+        assert (
+            config.watch_addresses[0]
+            == "0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d"
+        )
         assert config.scan_interval == 60
         assert config.batch_size == 50
         assert config.lookback_blocks == 100
@@ -180,8 +189,14 @@ class TestWatcherModeConfig:
         )
 
         assert len(config.watch_addresses) == 2
-        assert config.watch_addresses[0] == "0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d"
-        assert config.watch_addresses[1] == "0x742D35CC6634c0532925A3b844BC9E7595F0BEb0"
+        assert (
+            config.watch_addresses[0]
+            == "0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d"
+        )
+        assert (
+            config.watch_addresses[1]
+            == "0x742D35CC6634c0532925A3b844BC9E7595F0BEb0"
+        )
 
     def test_checksum_watch_addresses(self):
         """Test that watch addresses are converted to checksum format."""
@@ -195,8 +210,14 @@ class TestWatcherModeConfig:
         )
 
         # Should be converted to checksum format
-        assert config.watch_addresses[0] == "0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d"
-        assert config.watch_addresses[1] == "0x742D35CC6634c0532925A3b844BC9E7595F0BEb0"
+        assert (
+            config.watch_addresses[0]
+            == "0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d"
+        )
+        assert (
+            config.watch_addresses[1]
+            == "0x742D35CC6634c0532925A3b844BC9E7595F0BEb0"
+        )
 
     def test_default_batch_size(self):
         """Test default batch size."""
@@ -218,7 +239,9 @@ class TestWatcherModeConfig:
 
     def test_empty_watch_addresses(self):
         """Test that empty watch addresses list raises an error."""
-        with pytest.raises(ValueError, match="Watcher mode requires at least one watch address"):
+        with pytest.raises(
+            ValueError, match="Watcher mode requires at least one watch address"
+        ):
             WatcherModeConfig(
                 watch_addresses=[],
                 scan_interval=60,
@@ -226,7 +249,9 @@ class TestWatcherModeConfig:
 
     def test_none_watch_addresses(self):
         """Test that None watch addresses raises an error."""
-        with pytest.raises(ValueError, match="Watcher mode requires at least one watch address"):
+        with pytest.raises(
+            ValueError, match="Watcher mode requires at least one watch address"
+        ):
             WatcherModeConfig(
                 watch_addresses=None,
                 scan_interval=60,
@@ -293,7 +318,9 @@ class TestWatcherModeConfig:
 
     def test_lookback_blocks_validation_zero(self):
         """Test that zero lookback blocks raises an error."""
-        with pytest.raises(ValueError, match="Lookback blocks must be positive"):
+        with pytest.raises(
+            ValueError, match="Lookback blocks must be positive"
+        ):
             WatcherModeConfig(
                 watch_addresses=["0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d"],
                 scan_interval=60,
@@ -302,7 +329,9 @@ class TestWatcherModeConfig:
 
     def test_lookback_blocks_validation_negative(self):
         """Test that negative lookback blocks raises an error."""
-        with pytest.raises(ValueError, match="Lookback blocks must be positive"):
+        with pytest.raises(
+            ValueError, match="Lookback blocks must be positive"
+        ):
             WatcherModeConfig(
                 watch_addresses=["0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d"],
                 scan_interval=60,
@@ -332,8 +361,10 @@ class TestWatcherModeConfig:
         with pytest.raises(AttributeError):
             config.batch_size = 100
 
+
 class TestPushModeConfig:
     """Tests for PushModeConfig."""
+
     # push_interval: int  # seconds between block pushes
     # batch_size: int = 20  # max blocks to push per iteration
 
@@ -464,6 +495,7 @@ class TestPushModeConfig:
 
 class TestEventListenerModeConfig:
     """Tests for EventListenerModeConfig."""
+
     # polling_interval: int  # seconds between event polls
     # lookback_blocks: int   # blocks to look back on startup
     # contract_address: str  # contract address to listen to for BlockHeaderRequested events
@@ -478,7 +510,10 @@ class TestEventListenerModeConfig:
 
         assert config.polling_interval == 12
         assert config.lookback_blocks == 100
-        assert config.contract_address == "0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d"
+        assert (
+            config.contract_address
+            == "0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d"
+        )
 
     def test_checksum_contract_address(self):
         """Test that contract address is converted to checksum format."""
@@ -490,11 +525,17 @@ class TestEventListenerModeConfig:
         )
 
         # Should be converted to checksum format
-        assert config.contract_address == "0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d"
+        assert (
+            config.contract_address
+            == "0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d"
+        )
 
     def test_empty_contract_address(self):
         """Test that empty contract address raises an error."""
-        with pytest.raises(ValueError, match="Contract address for event listener mode cannot be empty"):
+        with pytest.raises(
+            ValueError,
+            match="Contract address for event listener mode cannot be empty",
+        ):
             EventListenerModeConfig(
                 polling_interval=12,
                 lookback_blocks=100,
@@ -512,7 +553,9 @@ class TestEventListenerModeConfig:
 
     def test_polling_interval_validation_zero(self):
         """Test that zero polling interval raises an error."""
-        with pytest.raises(ValueError, match="Polling interval must be positive"):
+        with pytest.raises(
+            ValueError, match="Polling interval must be positive"
+        ):
             EventListenerModeConfig(
                 polling_interval=0,
                 lookback_blocks=100,
@@ -521,7 +564,9 @@ class TestEventListenerModeConfig:
 
     def test_polling_interval_validation_negative(self):
         """Test that negative polling interval raises an error."""
-        with pytest.raises(ValueError, match="Polling interval must be positive"):
+        with pytest.raises(
+            ValueError, match="Polling interval must be positive"
+        ):
             EventListenerModeConfig(
                 polling_interval=-1,
                 lookback_blocks=100,
@@ -549,7 +594,9 @@ class TestEventListenerModeConfig:
 
     def test_lookback_blocks_validation_zero(self):
         """Test that zero lookback blocks raises an error."""
-        with pytest.raises(ValueError, match="Lookback blocks must be positive"):
+        with pytest.raises(
+            ValueError, match="Lookback blocks must be positive"
+        ):
             EventListenerModeConfig(
                 polling_interval=12,
                 lookback_blocks=0,
@@ -558,7 +605,9 @@ class TestEventListenerModeConfig:
 
     def test_lookback_blocks_validation_negative(self):
         """Test that negative lookback blocks raises an error."""
-        with pytest.raises(ValueError, match="Lookback blocks must be positive"):
+        with pytest.raises(
+            ValueError, match="Lookback blocks must be positive"
+        ):
             EventListenerModeConfig(
                 polling_interval=12,
                 lookback_blocks=-1,
@@ -622,7 +671,10 @@ class TestEventListenerModeConfig:
             config.lookback_blocks = 200
 
         with pytest.raises(AttributeError):
-            config.contract_address = "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0"
+            config.contract_address = (
+                "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0"
+            )
+
 
 class TestOracleConfig:
     """Tests for OracleConfig."""
@@ -630,7 +682,7 @@ class TestOracleConfig:
     def test_valid_event_listener_config(self):
         """Test creating a valid oracle configuration in event listener mode."""
         from rofl_oracle.config import OracleMode
-        
+
         common = CommonConfig(
             source_rpc_url="https://test.rpc",
             source_chain_id=None,
@@ -661,7 +713,7 @@ class TestOracleConfig:
     def test_valid_push_oracle_config(self):
         """Test creating a valid oracle configuration in push mode."""
         from rofl_oracle.config import OracleMode
-        
+
         common = CommonConfig(
             source_rpc_url="https://test.rpc",
             source_chain_id=None,
@@ -690,7 +742,7 @@ class TestOracleConfig:
     def test_valid_watcher_config(self):
         """Test creating a valid oracle configuration in watcher mode."""
         from rofl_oracle.config import OracleMode
-        
+
         common = CommonConfig(
             source_rpc_url="https://test.rpc",
             source_chain_id=None,
@@ -718,7 +770,7 @@ class TestOracleConfig:
     def test_mode_config_mismatch_event_listener(self):
         """Test that event listener mode requires EventListenerModeConfig."""
         from rofl_oracle.config import OracleMode
-        
+
         common = CommonConfig(
             source_rpc_url="https://test.rpc",
             source_chain_id=None,
@@ -729,7 +781,10 @@ class TestOracleConfig:
         )
         push = PushModeConfig(push_interval=60)
 
-        with pytest.raises(ValueError, match="Event listener mode requires EventListenerModeConfig"):
+        with pytest.raises(
+            ValueError,
+            match="Event listener mode requires EventListenerModeConfig",
+        ):
             OracleConfig(
                 common_config=common,
                 oracle_mode=OracleMode.EVENT_LISTENER,
@@ -739,7 +794,7 @@ class TestOracleConfig:
     def test_mode_config_mismatch_push(self):
         """Test that push mode requires PushModeConfig."""
         from rofl_oracle.config import OracleMode
-        
+
         common = CommonConfig(
             source_rpc_url="https://test.rpc",
             source_chain_id=None,
@@ -753,7 +808,9 @@ class TestOracleConfig:
             scan_interval=60,
         )
 
-        with pytest.raises(ValueError, match="Push oracle mode requires PushModeConfig"):
+        with pytest.raises(
+            ValueError, match="Push oracle mode requires PushModeConfig"
+        ):
             OracleConfig(
                 common_config=common,
                 oracle_mode=OracleMode.PUSH,
@@ -763,7 +820,7 @@ class TestOracleConfig:
     def test_mode_config_mismatch_watcher(self):
         """Test that watcher mode requires WatcherModeConfig."""
         from rofl_oracle.config import OracleMode
-        
+
         common = CommonConfig(
             source_rpc_url="https://test.rpc",
             source_chain_id=None,
@@ -778,7 +835,9 @@ class TestOracleConfig:
             contract_address="0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d",
         )
 
-        with pytest.raises(ValueError, match="Watcher mode requires WatcherModeConfig"):
+        with pytest.raises(
+            ValueError, match="Watcher mode requires WatcherModeConfig"
+        ):
             OracleConfig(
                 common_config=common,
                 oracle_mode=OracleMode.WATCHER,
@@ -788,7 +847,7 @@ class TestOracleConfig:
     def test_local_mode_requires_private_key(self):
         """Test that local mode requires a private key."""
         from rofl_oracle.config import OracleMode
-        
+
         common = CommonConfig(
             source_rpc_url="https://test.rpc",
             source_chain_id=None,
@@ -799,7 +858,9 @@ class TestOracleConfig:
         )
         push = PushModeConfig(push_interval=60)
 
-        with pytest.raises(ValueError, match="Local mode requires LOCAL_PRIVATE_KEY"):
+        with pytest.raises(
+            ValueError, match="Local mode requires LOCAL_PRIVATE_KEY"
+        ):
             OracleConfig(
                 common_config=common,
                 oracle_mode=OracleMode.PUSH,
@@ -811,7 +872,7 @@ class TestOracleConfig:
     def test_valid_private_key(self):
         """Test valid private key format."""
         from rofl_oracle.config import OracleMode
-        
+
         common = CommonConfig(
             source_rpc_url="https://test.rpc",
             source_chain_id=None,
@@ -845,7 +906,7 @@ class TestOracleConfig:
     def test_invalid_private_key_length(self):
         """Test invalid private key length."""
         from rofl_oracle.config import OracleMode
-        
+
         common = CommonConfig(
             source_rpc_url="https://test.rpc",
             source_chain_id=None,
@@ -868,7 +929,7 @@ class TestOracleConfig:
     def test_invalid_private_key_format(self):
         """Test invalid private key format."""
         from rofl_oracle.config import OracleMode
-        
+
         common = CommonConfig(
             source_rpc_url="https://test.rpc",
             source_chain_id=None,
@@ -892,11 +953,11 @@ class TestOracleConfig:
         os.environ,
         {
             "SOURCE_RPC_URL": "https://test.rpc",
-            "BLOCKHEADER_REQUESTER_ADDRESS": "0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d",
+            "SOURCE_CONTRACT_ADDRESS": "0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d",
             "ROFL_ADAPTER_ADDRESS": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0",
             "TARGET_RPC_URL": "https://testnet.sapphire.oasis.io",
             "ORACLE_MODE": "event_listener",
-            "SCAN_INTERVAL": "20",
+            "POLLING_INTERVAL": "20",
             "LOOKBACK_BLOCKS": "50",
             "REQUEST_TIMEOUT": "30",
             "RETRY_COUNT": "3",
@@ -905,20 +966,29 @@ class TestOracleConfig:
     def test_from_env_event_listener(self):
         """Test loading event listener configuration from environment variables."""
         from rofl_oracle.config import OracleMode
-        
+
         config = OracleConfig.from_env()
 
         assert config.common_config.source_rpc_url == "https://test.rpc"
-        assert config.common_config.target_rpc_url == "https://testnet.sapphire.oasis.io"
-        assert config.common_config.target_contract_address == "0x742D35CC6634c0532925A3b844BC9E7595F0BEb0"
+        assert (
+            config.common_config.target_rpc_url
+            == "https://testnet.sapphire.oasis.io"
+        )
+        assert (
+            config.common_config.target_contract_address
+            == "0x742D35CC6634c0532925A3b844BC9E7595F0BEb0"
+        )
         assert config.common_config.request_timeout == 30
         assert config.common_config.retry_count == 3
-        
+
         assert config.oracle_mode == OracleMode.EVENT_LISTENER
         assert isinstance(config.mode_config, EventListenerModeConfig)
         assert config.mode_config.polling_interval == 20
         assert config.mode_config.lookback_blocks == 50
-        assert config.mode_config.contract_address == "0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d"
+        assert (
+            config.mode_config.contract_address
+            == "0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d"
+        )
         assert config.local_mode is False
 
     @patch.dict(
@@ -937,7 +1007,7 @@ class TestOracleConfig:
     def test_from_env_push_oracle(self):
         """Test loading push oracle configuration from environment variables."""
         from rofl_oracle.config import OracleMode
-        
+
         config = OracleConfig.from_env()
 
         assert config.common_config.source_rpc_url == "https://test.rpc"
@@ -964,14 +1034,20 @@ class TestOracleConfig:
     def test_from_env_watcher(self):
         """Test loading watcher configuration from environment variables."""
         from rofl_oracle.config import OracleMode
-        
+
         config = OracleConfig.from_env()
 
         assert config.oracle_mode == OracleMode.WATCHER
         assert isinstance(config.mode_config, WatcherModeConfig)
         assert len(config.mode_config.watch_addresses) == 2
-        assert config.mode_config.watch_addresses[0] == "0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d"
-        assert config.mode_config.watch_addresses[1] == "0x742D35CC6634c0532925A3b844BC9E7595F0BEb0"
+        assert (
+            config.mode_config.watch_addresses[0]
+            == "0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d"
+        )
+        assert (
+            config.mode_config.watch_addresses[1]
+            == "0x742D35CC6634c0532925A3b844BC9E7595F0BEb0"
+        )
         assert config.mode_config.scan_interval == 90
         assert config.mode_config.batch_size == 75
         assert config.mode_config.lookback_blocks == 200
@@ -995,7 +1071,9 @@ class TestOracleConfig:
     @patch.dict(os.environ, {}, clear=True)
     def test_from_env_missing_required(self):
         """Test that missing required environment variables raise errors."""
-        with pytest.raises(ValueError, match="Target contract address is required"):
+        with pytest.raises(
+            ValueError, match="Target contract address is required"
+        ):
             OracleConfig.from_env()
 
     @patch.dict(
@@ -1003,12 +1081,17 @@ class TestOracleConfig:
         {
             "ROFL_ADAPTER_ADDRESS": "0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d",
             "ORACLE_MODE": "event_listener",
+            "SOURCE_RPC_URL": "https://test.rpc",
+            "TARGET_RPC_URL": "https://testnet.sapphire.oasis.io",
         },
-        clear=True
+        clear=True,
     )
     def test_from_env_missing_source_contract_for_event_listener(self):
         """Test that event listener mode requires source contract address."""
-        with pytest.raises(ValueError, match="Contract address for event listener mode cannot be empty"):
+        with pytest.raises(
+            ValueError,
+            match="Contract address for event listener mode cannot be empty",
+        ):
             OracleConfig.from_env()
 
     @patch.dict(
@@ -1016,18 +1099,22 @@ class TestOracleConfig:
         {
             "ROFL_ADAPTER_ADDRESS": "0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d",
             "ORACLE_MODE": "watcher",
+            "SOURCE_RPC_URL": "https://test.rpc",
+            "TARGET_RPC_URL": "https://testnet.sapphire.oasis.io",
         },
-        clear=True
+        clear=True,
     )
     def test_from_env_missing_watch_addresses_for_watcher(self):
         """Test that watcher mode requires watch addresses."""
-        with pytest.raises(ValueError, match="WATCH_ADDRESSES is required for watcher mode"):
+        with pytest.raises(
+            ValueError, match="WATCH_ADDRESSES is required for watcher mode"
+        ):
             OracleConfig.from_env()
 
     def test_with_chain_id(self):
         """Test updating configuration with chain ID."""
         from rofl_oracle.config import OracleMode
-        
+
         common = CommonConfig(
             source_rpc_url="https://test.rpc",
             source_chain_id=None,
@@ -1052,14 +1139,20 @@ class TestOracleConfig:
         # New config has chain ID
         assert new_config.common_config.source_chain_id == 1
         # Other fields unchanged
-        assert new_config.common_config.source_rpc_url == config.common_config.source_rpc_url
-        assert new_config.common_config.target_rpc_url == config.common_config.target_rpc_url
+        assert (
+            new_config.common_config.source_rpc_url
+            == config.common_config.source_rpc_url
+        )
+        assert (
+            new_config.common_config.target_rpc_url
+            == config.common_config.target_rpc_url
+        )
         assert new_config.oracle_mode == config.oracle_mode
 
     def test_log_config_event_listener(self, caplog):
         """Test configuration logging for event listener mode."""
         from rofl_oracle.config import OracleMode
-        
+
         common = CommonConfig(
             source_rpc_url="https://test.rpc",
             source_chain_id=1,
@@ -1098,7 +1191,7 @@ class TestOracleConfig:
     def test_immutability(self):
         """Test that configuration is immutable."""
         from rofl_oracle.config import OracleMode
-        
+
         common = CommonConfig(
             source_rpc_url="https://test.rpc",
             source_chain_id=None,

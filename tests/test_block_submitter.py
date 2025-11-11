@@ -244,28 +244,28 @@ class TestBlockSubmitter:
     ):
         """Test getting the registered oracle address."""
         oracle_address = "0x1234567890123456789012345678901234567890"
-        
+
         # Setup mock for ROFL_ORACLE function call
         mock_contract.functions.ROFL_ORACLE = MagicMock()
         mock_contract.functions.ROFL_ORACLE().call = MagicMock(
             return_value=oracle_address
         )
-        
+
         mock_contract_util.get_contract_abi = MagicMock(return_value=[])
         mock_contract_util.w3.eth.contract = MagicMock(
             return_value=mock_contract
         )
-        
+
         submitter = BlockSubmitter(
             contract_util=mock_contract_util,
             rofl_util=mock_rofl_util,
             source_chain_id=1,
             contract_address="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb7",
         )
-        
+
         result = await submitter.get_registered_oracle()
         assert result == oracle_address
-        
+
     @pytest.mark.asyncio
     async def test_get_registered_oracle_none(
         self, mock_contract_util, mock_rofl_util, mock_contract
@@ -276,32 +276,32 @@ class TestBlockSubmitter:
         mock_contract.functions.ROFL_ORACLE().call = MagicMock(
             return_value="0x0000000000000000000000000000000000000000"
         )
-        
+
         mock_contract_util.get_contract_abi = MagicMock(return_value=[])
         mock_contract_util.w3.eth.contract = MagicMock(
             return_value=mock_contract
         )
-        
+
         submitter = BlockSubmitter(
             contract_util=mock_contract_util,
             rofl_util=mock_rofl_util,
             source_chain_id=1,
             contract_address="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb7",
         )
-        
+
         result = await submitter.get_registered_oracle()
         assert result is None
-        
+
     @pytest.mark.asyncio
     async def test_register_oracle_success(
         self, mock_contract_util, mock_rofl_util, mock_contract
     ):
         """Test successful oracle registration."""
         oracle_address = "0x1234567890123456789012345678901234567890"
-        
+
         # Setup mocks
         mock_contract_util.w3.eth.default_account = oracle_address
-        
+
         mock_build_tx = MagicMock()
         mock_build_tx.build_transaction = MagicMock(
             return_value={
@@ -313,25 +313,27 @@ class TestBlockSubmitter:
             }
         )
         mock_contract.functions.setOracle.return_value = mock_build_tx
-        
+
         mock_contract_util.get_contract_abi = MagicMock(return_value=[])
         mock_contract_util.w3.eth.contract = MagicMock(
             return_value=mock_contract
         )
-        
+
         submitter = BlockSubmitter(
             contract_util=mock_contract_util,
             rofl_util=mock_rofl_util,
             source_chain_id=1,
             contract_address="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb7",
         )
-        
+
         result = await submitter.register_oracle()
-        
+
         assert result is True
-        mock_contract.functions.setOracle.assert_called_once_with(oracle_address)
+        mock_contract.functions.setOracle.assert_called_once_with(
+            oracle_address
+        )
         mock_rofl_util.submit_tx.assert_called_once()
-        
+
     @pytest.mark.asyncio
     async def test_register_oracle_local_mode(
         self, mock_contract_util, mock_contract
@@ -341,16 +343,16 @@ class TestBlockSubmitter:
         mock_contract_util.w3.eth.contract = MagicMock(
             return_value=mock_contract
         )
-        
+
         submitter = BlockSubmitter(
             contract_util=mock_contract_util,
             rofl_util=None,  # Local mode
             source_chain_id=1,
             contract_address="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb7",
         )
-        
+
         result = await submitter.register_oracle()
-        
+
         assert result is True  # Should return True but do nothing
         mock_contract.functions.setOracle.assert_not_called()
 

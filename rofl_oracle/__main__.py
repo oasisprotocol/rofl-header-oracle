@@ -27,7 +27,9 @@ def setup_logging(level: str = "INFO") -> None:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
+
 logger = logging.getLogger(__name__)
+
 
 async def main() -> None:
     """Main entry point for the ROFL Header Oracle backend service.
@@ -74,7 +76,7 @@ async def main() -> None:
             "  - TARGET_RPC_URL: Target chain RPC endpoint (default: testnet)"
         )
         logger.error(
-            "  - BLOCKHEADER_REQUESTER_ADDRESS: BlockHeaderRequester contract address (leave empty for push oracle or watcher mode)"
+            "  - SOURCE_CONTRACT_ADDRESS: BlockHeaderRequester contract address (for event_listener mode only)"
         )
         logger.error(
             "  - WATCH_ADDRESSES: Comma-separated addresses to watch (for watcher mode only)"

@@ -65,7 +65,7 @@ def mock_oracle_config(mock_common_config, mock_push_oracle_config):
         oracle_mode=OracleMode.PUSH,
         mode_config=mock_push_oracle_config,
         local_mode=True,
-        local_private_key="0x" + "a" * 64
+        local_private_key="0x" + "a" * 64,
     )
 
 
@@ -73,7 +73,10 @@ def mock_oracle_config(mock_common_config, mock_push_oracle_config):
 def mock_watcher_config():
     """Create a mock watcher config for watcher mode."""
     return WatcherModeConfig(
-        watch_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7", "0x1234567890123456789012345678901234567890"],
+        watch_addresses=[
+            "0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7",
+            "0x1234567890123456789012345678901234567890",
+        ],
         scan_interval=5,
     )
 
@@ -86,7 +89,7 @@ def mock_oracle_config_watcher(mock_common_config, mock_watcher_config):
         oracle_mode=OracleMode.WATCHER,
         mode_config=mock_watcher_config,
         local_mode=True,
-        local_private_key="0x" + "a" * 64
+        local_private_key="0x" + "a" * 64,
     )
 
 
@@ -102,43 +105,61 @@ class TestPushOracleMode:
     @pytest.mark.asyncio
     async def test_push_oracle_initialization(self, mock_oracle_config):
         """Test that HeaderOracle initializes correctly in push oracle mode."""
-        with patch('rofl_oracle.header_oracle.Web3') as mock_web3_class:
+        with patch("rofl_oracle.header_oracle.Web3") as mock_web3_class:
             # Mock Web3 instances
             mock_source_w3 = MagicMock()
             mock_source_w3.is_connected.return_value = True
             mock_source_w3.eth.chain_id = 1337
-            
+
             mock_web3_class.return_value = mock_source_w3
-            
+
             # Mock ContractUtility
-            with patch('rofl_oracle.header_oracle.ContractUtility') as mock_contract_util_class:
+            with patch(
+                "rofl_oracle.header_oracle.ContractUtility"
+            ) as mock_contract_util_class:
                 mock_contract_util = MagicMock()
-                mock_contract_util.w3.eth.default_account = "0x1234567890123456789012345678901234567890"
+                mock_contract_util.w3.eth.default_account = (
+                    "0x1234567890123456789012345678901234567890"
+                )
                 mock_contract_util_class.return_value = mock_contract_util
-                
+
                 # Mock BlockSubmitter
-                with patch('rofl_oracle.header_oracle.BlockSubmitter') as mock_block_submitter_class:
+                with patch(
+                    "rofl_oracle.header_oracle.BlockSubmitter"
+                ) as mock_block_submitter_class:
                     mock_block_submitter = MagicMock()
-                    mock_block_submitter_class.return_value = mock_block_submitter
-                    
+                    mock_block_submitter_class.return_value = (
+                        mock_block_submitter
+                    )
+
                     # Mock EventProcessor
-                    with patch('rofl_oracle.header_oracle.EventProcessor') as mock_event_processor_class:
+                    with patch(
+                        "rofl_oracle.header_oracle.EventProcessor"
+                    ) as mock_event_processor_class:
                         mock_event_processor = MagicMock()
-                        mock_event_processor_class.return_value = mock_event_processor
-                        
+                        mock_event_processor_class.return_value = (
+                            mock_event_processor
+                        )
+
                         oracle = await HeaderOracle.create(mock_oracle_config)
-                        
+
                         # Verify push oracle mode initialization
                         assert oracle.config.oracle_mode == OracleMode.PUSH
-                        assert oracle.event_listener is None  # No event listener in push mode
-                        assert oracle.block_requester_abi is None  # No ABI needed
+                        assert (
+                            oracle.event_listener is None
+                        )  # No event listener in push mode
+                        assert (
+                            oracle.block_requester_abi is None
+                        )  # No ABI needed
 
     @pytest.mark.asyncio
     async def test_push_latest_block_header_first_run(self):
         """Test pushing block header when no blocks have been stored yet."""
         # Mock BlockSubmitter
         mock_block_submitter = MagicMock()
-        mock_block_submitter.get_latest_block_number = AsyncMock(return_value=None)  # No blocks stored
+        mock_block_submitter.get_latest_block_number = AsyncMock(
+            return_value=None
+        )  # No blocks stored
         mock_block_submitter.submit_block_header = AsyncMock(return_value=True)
 
         # Mock Web3 source chain
@@ -153,7 +174,7 @@ class TestPushOracleMode:
         # Mock fetch_block_by_number
         mock_block_data = {
             "hash": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-            "number": 1000
+            "number": 1000,
         }
         oracle.fetch_block_by_number = MagicMock(return_value=mock_block_data)
 
@@ -162,7 +183,8 @@ class TestPushOracleMode:
         # Should start from latest block (1000) when no blocks stored
         oracle.fetch_block_by_number.assert_called_once_with(1000)
         mock_block_submitter.submit_block_header.assert_called_once_with(
-            1000, "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+            1000,
+            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
         )
 
     @pytest.mark.asyncio
@@ -170,7 +192,9 @@ class TestPushOracleMode:
         """Test backfilling blocks when oracle is behind."""
         # Mock BlockSubmitter
         mock_block_submitter = MagicMock()
-        mock_block_submitter.get_latest_block_number = AsyncMock(return_value=995)  # 5 blocks behind
+        mock_block_submitter.get_latest_block_number = AsyncMock(
+            return_value=995
+        )  # 5 blocks behind
         mock_block_submitter.submit_block_header = AsyncMock(return_value=True)
 
         # Mock Web3 source chain
@@ -184,10 +208,8 @@ class TestPushOracleMode:
 
         # Mock fetch_block_by_number to return different blocks
         def mock_fetch_block(block_number):
-            return {
-                "hash": f"0x{block_number:064x}",
-                "number": block_number
-            }
+            return {"hash": f"0x{block_number:064x}", "number": block_number}
+
         oracle.fetch_block_by_number = MagicMock(side_effect=mock_fetch_block)
 
         await oracle.push_latest_block_header()
@@ -207,21 +229,23 @@ class TestPushOracleMode:
         """Test when oracle is already up to date."""
         # Mock BlockSubmitter
         mock_block_submitter = MagicMock()
-        mock_block_submitter.get_latest_block_number = AsyncMock(return_value=1000)  # Up to date
+        mock_block_submitter.get_latest_block_number = AsyncMock(
+            return_value=1000
+        )  # Up to date
         mock_block_submitter.submit_block_header = AsyncMock()
-        
+
         # Mock Web3 source chain
         mock_source_w3 = MagicMock()
         mock_source_w3.eth.block_number = 1000  # Same as stored
-        
+
         # Create HeaderOracle instance
         oracle = HeaderOracle()
         oracle.block_submitter = mock_block_submitter
         oracle.source_w3 = mock_source_w3
         oracle.fetch_block_by_number = MagicMock()
-        
+
         await oracle.push_latest_block_header()
-        
+
         # Should not fetch or submit any blocks
         oracle.fetch_block_by_number.assert_not_called()
         mock_block_submitter.submit_block_header.assert_not_called()
@@ -231,30 +255,35 @@ class TestPushOracleMode:
         """Test handling of submission failures."""
         # Mock BlockSubmitter
         mock_block_submitter = MagicMock()
-        mock_block_submitter.get_latest_block_number = AsyncMock(return_value=995)  # 5 blocks behind
-        mock_block_submitter.submit_block_header = AsyncMock(return_value=False)  # Fail
-        
+        mock_block_submitter.get_latest_block_number = AsyncMock(
+            return_value=995
+        )  # 5 blocks behind
+        mock_block_submitter.submit_block_header = AsyncMock(
+            return_value=False
+        )  # Fail
+
         # Mock Web3 source chain
         mock_source_w3 = MagicMock()
         mock_source_w3.eth.block_number = 1000
-        
+
         # Create HeaderOracle instance
         oracle = HeaderOracle()
         oracle.block_submitter = mock_block_submitter
         oracle.source_w3 = mock_source_w3
-        
+
         # Mock fetch_block_by_number
         mock_block_data = {
             "hash": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-            "number": 996
+            "number": 996,
         }
         oracle.fetch_block_by_number = MagicMock(return_value=mock_block_data)
-        
+
         await oracle.push_latest_block_header()
-        
+
         # Should attempt submission but fail
         mock_block_submitter.submit_block_header.assert_called_once_with(
-            996, "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+            996,
+            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
         )
 
     @pytest.mark.asyncio
@@ -262,23 +291,25 @@ class TestPushOracleMode:
         """Test handling of block fetch failures."""
         # Mock BlockSubmitter
         mock_block_submitter = MagicMock()
-        mock_block_submitter.get_latest_block_number = AsyncMock(return_value=995) # 5 blocks behind
+        mock_block_submitter.get_latest_block_number = AsyncMock(
+            return_value=995
+        )  # 5 blocks behind
         mock_block_submitter.submit_block_header = AsyncMock()
-        
+
         # Mock Web3 source chain
         mock_source_w3 = MagicMock()
         mock_source_w3.eth.block_number = 1000
-        
+
         # Create HeaderOracle instance
         oracle = HeaderOracle()
         oracle.block_submitter = mock_block_submitter
         oracle.source_w3 = mock_source_w3
-        
+
         # Mock fetch_block_by_number to return None (failure)
         oracle.fetch_block_by_number = MagicMock(return_value=None)
-        
+
         await oracle.push_latest_block_header()
-        
+
         # Should not attempt submission
         oracle.fetch_block_by_number.assert_called_once_with(996)
         mock_block_submitter.submit_block_header.assert_not_called()
@@ -288,24 +319,26 @@ class TestPushOracleMode:
         """Test handling of blocks without hash."""
         # Mock BlockSubmitter
         mock_block_submitter = MagicMock()
-        mock_block_submitter.get_latest_block_number = AsyncMock(return_value=995) # 5 blocks behind
+        mock_block_submitter.get_latest_block_number = AsyncMock(
+            return_value=995
+        )  # 5 blocks behind
         mock_block_submitter.submit_block_header = AsyncMock()
-        
+
         # Mock Web3 source chain
         mock_source_w3 = MagicMock()
         mock_source_w3.eth.block_number = 1000
-        
+
         # Create HeaderOracle instance
         oracle = HeaderOracle()
         oracle.block_submitter = mock_block_submitter
         oracle.source_w3 = mock_source_w3
-        
+
         # Mock fetch_block_by_number to return block without hash
         mock_block_data = {"number": 996}  # No hash
         oracle.fetch_block_by_number = MagicMock(return_value=mock_block_data)
-        
+
         await oracle.push_latest_block_header()
-        
+
         # Should not attempt submission
         mock_block_submitter.submit_block_header.assert_not_called()
 
@@ -314,23 +347,23 @@ class TestPushOracleMode:
         """Test BlockSubmitter.get_latest_block_number method."""
         # Mock contract utility
         mock_contract_util = MagicMock()
-        
+
         # Mock contract
         mock_contract = MagicMock()
         mock_contract.functions.lastStoredBlock.return_value.call.return_value = 1000
-        
+
         mock_contract_util.get_contract_abi.return_value = []
         mock_contract_util.w3.eth.contract.return_value = mock_contract
-        
+
         submitter = BlockSubmitter(
             contract_util=mock_contract_util,
             rofl_util=None,
             source_chain_id=1337,
-            contract_address="0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"
+            contract_address="0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7",
         )
-        
+
         result = await submitter.get_latest_block_number()  # Add await
-        
+
         assert result == 1000
         mock_contract.functions.lastStoredBlock.assert_called_once_with(1337)
 
@@ -339,23 +372,23 @@ class TestPushOracleMode:
         """Test BlockSubmitter.get_latest_block_number when no blocks stored."""
         # Mock contract utility
         mock_contract_util = MagicMock()
-        
+
         # Mock contract
         mock_contract = MagicMock()
         mock_contract.functions.lastStoredBlock.return_value.call.return_value = 0
-        
+
         mock_contract_util.get_contract_abi.return_value = []
         mock_contract_util.w3.eth.contract.return_value = mock_contract
-        
+
         submitter = BlockSubmitter(
             contract_util=mock_contract_util,
             rofl_util=None,
             source_chain_id=1337,
-            contract_address="0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"
+            contract_address="0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7",
         )
-        
+
         result = await submitter.get_latest_block_number()
-        
+
         assert result is None  # Returns None when lastStoredBlock is 0
 
     @pytest.mark.asyncio
@@ -363,65 +396,74 @@ class TestPushOracleMode:
         """Test BlockSubmitter.get_latest_block_number error handling."""
         # Mock contract utility
         mock_contract_util = MagicMock()
-        
+
         # Mock contract to raise exception
         mock_contract = MagicMock()
-        mock_contract.functions.lastStoredBlock.return_value.call.side_effect = Exception("Contract error")
-        
+        mock_contract.functions.lastStoredBlock.return_value.call.side_effect = Exception(
+            "Contract error"
+        )
+
         mock_contract_util.get_contract_abi.return_value = []
         mock_contract_util.w3.eth.contract.return_value = mock_contract
-        
+
         submitter = BlockSubmitter(
             contract_util=mock_contract_util,
             rofl_util=None,
             source_chain_id=1337,
-            contract_address="0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"
+            contract_address="0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7",
         )
 
         result = await submitter.get_latest_block_number()
-        
+
         assert result is None  # Returns None on error
 
     @pytest.mark.asyncio
     async def test_push_oracle_run_mode(self, mock_oracle_config):
         """Test that HeaderOracle.run() uses push mode correctly."""
-        with patch('rofl_oracle.header_oracle.HeaderOracle._run_push_mode') as mock_run_push:
+        with patch(
+            "rofl_oracle.header_oracle.HeaderOracle._run_push_mode"
+        ) as mock_run_push:
             mock_run_push.return_value = None
-            
+
             oracle = HeaderOracle()
             oracle.config = mock_oracle_config
             oracle.source_w3 = MagicMock()
             oracle.event_listener = None
-            
+
             await oracle.run()
-            
+
             # Should call push mode, not event listener mode
             mock_run_push.assert_called_once()
 
-    @pytest.mark.asyncio 
+    @pytest.mark.asyncio
     async def test_push_oracle_run_push_mode_loop(self):
         """Test the push mode loop with interruption."""
+        from rofl_oracle.config import PushModeConfig
+
         oracle = HeaderOracle()
         oracle.config = MagicMock()
-        oracle.config.mode_config.push_interval = 0.1  # Very short for testing
-        
+        oracle.config.mode_config = PushModeConfig(
+            push_interval=0.1,  # Very short for testing
+            batch_size=20,
+        )
+
         # Mock push_latest_block_header
         oracle.push_latest_block_header = AsyncMock()
-        
+
         # Track call count
         call_count = 0
-        
+
         async def mock_push():
             nonlocal call_count
             call_count += 1
             if call_count >= 3:  # Stop after 3 calls
                 raise KeyboardInterrupt("Test interruption")
-        
+
         oracle.push_latest_block_header.side_effect = mock_push
-        
+
         # Should not raise the KeyboardInterrupt
         await oracle._run_push_mode()
-        
+
         # Should have been called multiple times
         assert oracle.push_latest_block_header.call_count >= 3
 
@@ -430,16 +472,22 @@ class TestPushOracleMode:
         """Test proper hex conversion for bytes block hash."""
         oracle = HeaderOracle()
         oracle.block_submitter = MagicMock()
-        oracle.block_submitter.get_latest_block_number = AsyncMock(return_value=995)
-        oracle.block_submitter.submit_block_header = AsyncMock(return_value=True)
+        oracle.block_submitter.get_latest_block_number = AsyncMock(
+            return_value=995
+        )
+        oracle.block_submitter.submit_block_header = AsyncMock(
+            return_value=True
+        )
 
         oracle.source_w3 = MagicMock()
         oracle.source_w3.eth.block_number = 1000
 
         # Mock block with bytes hash
         mock_block_data = {
-            "hash": bytes.fromhex("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"),
-            "number": 996
+            "hash": bytes.fromhex(
+                "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+            ),
+            "number": 996,
         }
         oracle.fetch_block_by_number = MagicMock(return_value=mock_block_data)
 
@@ -449,7 +497,10 @@ class TestPushOracleMode:
         assert oracle.block_submitter.submit_block_header.call_count == 5
         for call in oracle.block_submitter.submit_block_header.call_args_list:
             _, hash_arg = call[0]
-            assert hash_arg == "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+            assert (
+                hash_arg
+                == "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+            )
 
 
 class TestWatcherMode:
@@ -459,7 +510,9 @@ class TestWatcherMode:
     async def test_watcher_config_detection(self, mock_oracle_config_watcher):
         """Test that watcher mode is correctly detected from config."""
         assert mock_oracle_config_watcher.oracle_mode == OracleMode.WATCHER
-        assert isinstance(mock_oracle_config_watcher.mode_config, WatcherModeConfig)
+        assert isinstance(
+            mock_oracle_config_watcher.mode_config, WatcherModeConfig
+        )
         assert len(mock_oracle_config_watcher.mode_config.watch_addresses) == 2
 
     @pytest.mark.asyncio
@@ -471,7 +524,10 @@ class TestWatcherMode:
             scan_interval=5,
         )
         assert len(config.watch_addresses) == 1
-        assert config.watch_addresses[0] == "0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"
+        assert (
+            config.watch_addresses[0]
+            == "0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"
+        )
 
         # Invalid address should raise error
         with pytest.raises(ValueError, match="Invalid watch address"):
@@ -481,7 +537,9 @@ class TestWatcherMode:
             )
 
         # Empty list should raise error
-        with pytest.raises(ValueError, match="Watch addresses list cannot be empty"):
+        with pytest.raises(
+            ValueError, match="Watcher mode requires at least one watch address"
+        ):
             WatcherModeConfig(
                 watch_addresses=[],
                 scan_interval=5,
@@ -490,96 +548,122 @@ class TestWatcherMode:
     @pytest.mark.asyncio
     async def test_watcher_initialization(self, mock_oracle_config_watcher):
         """Test that HeaderOracle initializes correctly in watcher mode."""
-        with patch('rofl_oracle.header_oracle.Web3') as mock_web3_class:
+        with patch("rofl_oracle.header_oracle.Web3") as mock_web3_class:
             # Mock Web3 instances
             mock_source_w3 = MagicMock()
             mock_source_w3.is_connected.return_value = True
             mock_source_w3.eth.chain_id = 1337
-            
+
             mock_web3_class.return_value = mock_source_w3
-            
+
             # Mock ContractUtility
-            with patch('rofl_oracle.header_oracle.ContractUtility') as mock_contract_util_class:
+            with patch(
+                "rofl_oracle.header_oracle.ContractUtility"
+            ) as mock_contract_util_class:
                 mock_contract_util = MagicMock()
-                mock_contract_util.w3.eth.default_account = "0x1234567890123456789012345678901234567890"
+                mock_contract_util.w3.eth.default_account = (
+                    "0x1234567890123456789012345678901234567890"
+                )
                 mock_contract_util_class.return_value = mock_contract_util
-                
+
                 # Mock BlockSubmitter
-                with patch('rofl_oracle.header_oracle.BlockSubmitter') as mock_block_submitter_class:
+                with patch(
+                    "rofl_oracle.header_oracle.BlockSubmitter"
+                ) as mock_block_submitter_class:
                     mock_block_submitter = MagicMock()
-                    mock_block_submitter_class.return_value = mock_block_submitter
-                    
+                    mock_block_submitter_class.return_value = (
+                        mock_block_submitter
+                    )
+
                     # Mock EventProcessor
-                    with patch('rofl_oracle.header_oracle.EventProcessor') as mock_event_processor_class:
+                    with patch(
+                        "rofl_oracle.header_oracle.EventProcessor"
+                    ) as mock_event_processor_class:
                         mock_event_processor = MagicMock()
-                        mock_event_processor_class.return_value = mock_event_processor
-                        
-                        oracle = await HeaderOracle.create(mock_oracle_config_watcher)
-                        
+                        mock_event_processor_class.return_value = (
+                            mock_event_processor
+                        )
+
+                        oracle = await HeaderOracle.create(
+                            mock_oracle_config_watcher
+                        )
+
                         # Verify watcher mode initialization
                         assert oracle.config.oracle_mode == OracleMode.WATCHER
-                        assert oracle.event_listener is None  # No event listener in watcher mode
-                        assert oracle.block_requester_abi is None  # No ABI needed
-                        assert hasattr(oracle, 'watched_addresses')
+                        assert (
+                            oracle.event_listener is None
+                        )  # No event listener in watcher mode
+                        assert (
+                            oracle.block_requester_abi is None
+                        )  # No ABI needed
+                        assert hasattr(oracle, "watched_addresses")
                         assert len(oracle.watched_addresses) == 2
 
     @pytest.mark.asyncio
     async def test_is_watched_transaction_from_address(self):
         """Test detecting transactions FROM watched addresses."""
         oracle = HeaderOracle()
-        oracle.watched_addresses = {"0x742d35cc6634c0532925a3b844bc9e7595f0beb7"}
-        
+        oracle.watched_addresses = {
+            "0x742d35cc6634c0532925a3b844bc9e7595f0beb7"
+        }
+
         # Transaction from watched address
         tx = {
             "from": "0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7",
             "to": "0x1111111111111111111111111111111111111111",
         }
-        
+
         assert oracle._is_watched_transaction(tx) is True
 
     @pytest.mark.asyncio
     async def test_is_watched_transaction_to_address(self):
         """Test detecting transactions TO watched addresses."""
         oracle = HeaderOracle()
-        oracle.watched_addresses = {"0x742d35cc6634c0532925a3b844bc9e7595f0beb7"}
-        
+        oracle.watched_addresses = {
+            "0x742d35cc6634c0532925a3b844bc9e7595f0beb7"
+        }
+
         # Transaction to watched address
         tx = {
             "from": "0x1111111111111111111111111111111111111111",
             "to": "0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7",
         }
-        
+
         assert oracle._is_watched_transaction(tx) is True
 
     @pytest.mark.asyncio
     async def test_is_watched_transaction_not_involved(self):
         """Test transactions not involving watched addresses."""
         oracle = HeaderOracle()
-        oracle.watched_addresses = {"0x742d35cc6634c0532925a3b844bc9e7595f0beb7"}
-        
+        oracle.watched_addresses = {
+            "0x742d35cc6634c0532925a3b844bc9e7595f0beb7"
+        }
+
         # Transaction not involving watched address
         tx = {
             "from": "0x1111111111111111111111111111111111111111",
             "to": "0x2222222222222222222222222222222222222222",
         }
-        
+
         assert oracle._is_watched_transaction(tx) is False
 
     @pytest.mark.asyncio
     async def test_check_block_for_interactions_with_hash_list(self):
         """Test checking block when transactions are returned as hashes."""
         oracle = HeaderOracle()
-        oracle.watched_addresses = {"0x742d35cc6634c0532925a3b844bc9e7595f0beb7"}
+        oracle.watched_addresses = {
+            "0x742d35cc6634c0532925a3b844bc9e7595f0beb7"
+        }
         oracle.source_w3 = MagicMock()
-        
+
         # Mock block with transaction hashes
         block = {
             "number": 1000,
             "hash": "0xabc123",
-            "transactions": ["0xtxhash1", "0xtxhash2"]
+            "transactions": ["0xtxhash1", "0xtxhash2"],
         }
         oracle.fetch_block_by_number = MagicMock(return_value=block)
-        
+
         # Mock get_transaction to return transaction details
         mock_tx1 = {
             "from": "0x1111111111111111111111111111111111111111",
@@ -590,9 +674,9 @@ class TestWatcherMode:
             "to": "0x3333333333333333333333333333333333333333",
         }
         oracle.source_w3.eth.get_transaction.side_effect = [mock_tx1, mock_tx2]
-        
+
         result = await oracle._check_block_for_interactions(1000)
-        
+
         assert result is True
         assert oracle.source_w3.eth.get_transaction.call_count == 2
 
@@ -600,8 +684,10 @@ class TestWatcherMode:
     async def test_check_block_for_interactions_with_full_txs(self):
         """Test checking block when transactions are returned as full objects."""
         oracle = HeaderOracle()
-        oracle.watched_addresses = {"0x742d35cc6634c0532925a3b844bc9e7595f0beb7"}
-        
+        oracle.watched_addresses = {
+            "0x742d35cc6634c0532925a3b844bc9e7595f0beb7"
+        }
+
         # Mock block with full transaction objects
         block = {
             "number": 1000,
@@ -616,21 +702,23 @@ class TestWatcherMode:
                     "hash": "0xtxhash2",
                     "from": "0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7",  # Watched
                     "to": "0x3333333333333333333333333333333333333333",
-                }
-            ]
+                },
+            ],
         }
         oracle.fetch_block_by_number = MagicMock(return_value=block)
-        
+
         result = await oracle._check_block_for_interactions(1000)
-        
+
         assert result is True
 
     @pytest.mark.asyncio
     async def test_check_block_for_interactions_no_interactions(self):
         """Test checking block with no watched address interactions."""
         oracle = HeaderOracle()
-        oracle.watched_addresses = {"0x742d35cc6634c0532925a3b844bc9e7595f0beb7"}
-        
+        oracle.watched_addresses = {
+            "0x742d35cc6634c0532925a3b844bc9e7595f0beb7"
+        }
+
         # Mock block with no watched address interactions
         block = {
             "number": 1000,
@@ -641,115 +729,143 @@ class TestWatcherMode:
                     "from": "0x1111111111111111111111111111111111111111",
                     "to": "0x2222222222222222222222222222222222222222",
                 }
-            ]
+            ],
         }
         oracle.fetch_block_by_number = MagicMock(return_value=block)
-        
+
         result = await oracle._check_block_for_interactions(1000)
-        
+
         assert result is False
 
     @pytest.mark.asyncio
     async def test_watch_addresses_for_interactions_first_run(self):
         """Test watching addresses when no blocks have been stored yet."""
         oracle = HeaderOracle()
-        oracle.watched_addresses = {"0x742d35cc6634c0532925a3b844bc9e7595f0beb7"}
+        oracle.watched_addresses = {
+            "0x742d35cc6634c0532925a3b844bc9e7595f0beb7"
+        }
         oracle.config = MagicMock()
-        oracle.config.mode_config.lookback_blocks = 10
-        
+        oracle.config.mode_config = WatcherModeConfig(
+            watch_addresses=["0x742d35cc6634c0532925a3b844bc9e7595f0beb7"],
+            scan_interval=60,
+            batch_size=50,
+            lookback_blocks=10,
+        )
+
         # Mock BlockSubmitter
         mock_block_submitter = MagicMock()
-        mock_block_submitter.get_latest_block_number = AsyncMock(return_value=None)
+        mock_block_submitter.get_latest_block_number = AsyncMock(
+            return_value=None
+        )
         mock_block_submitter.submit_block_header = AsyncMock(return_value=True)
         oracle.block_submitter = mock_block_submitter
-        
+
         # Mock Web3
         oracle.source_w3 = MagicMock()
         oracle.source_w3.eth.block_number = 1000
-        
+
         # Mock check for interactions - only block 995 has interaction
         async def mock_check_block(block_num):
             return block_num == 995
-        oracle._check_block_for_interactions = AsyncMock(side_effect=mock_check_block)
-        
+
+        oracle._check_block_for_interactions = AsyncMock(
+            side_effect=mock_check_block
+        )
+
         # Mock fetch block
         def mock_fetch_block(block_num):
-            return {
-                "number": block_num,
-                "hash": f"0x{block_num:064x}"
-            }
+            return {"number": block_num, "hash": f"0x{block_num:064x}"}
+
         oracle.fetch_block_by_number = MagicMock(side_effect=mock_fetch_block)
-        
+
         await oracle.watch_addresses_for_interactions()
-        
+
         # Should scan from block 990 to 1000 (lookback_blocks=10)
         # Should only submit block 995 which has interaction
         oracle._check_block_for_interactions.assert_called()
-        mock_block_submitter.submit_block_header.assert_called_once_with(995, f"0x{995:064x}")
+        mock_block_submitter.submit_block_header.assert_called_once_with(
+            995, f"0x{995:064x}"
+        )
 
     @pytest.mark.asyncio
     async def test_watch_addresses_for_interactions_multiple_interactions(self):
         """Test watching addresses with multiple interactions in range."""
         oracle = HeaderOracle()
-        oracle.watched_addresses = {"0x742d35cc6634c0532925a3b844bc9e7595f0beb7"}
+        oracle.watched_addresses = {
+            "0x742d35cc6634c0532925a3b844bc9e7595f0beb7"
+        }
         oracle.config = MagicMock()
         oracle.config.mode_config.lookback_blocks = 10
-        
+
         # Mock BlockSubmitter
         mock_block_submitter = MagicMock()
-        mock_block_submitter.get_latest_block_number = AsyncMock(return_value=990)
+        mock_block_submitter.get_latest_block_number = AsyncMock(
+            return_value=990
+        )
         mock_block_submitter.submit_block_header = AsyncMock(return_value=True)
         oracle.block_submitter = mock_block_submitter
-        
+
         # Mock Web3
         oracle.source_w3 = MagicMock()
         oracle.source_w3.eth.block_number = 1000
-        
+
         # Mock check for interactions - blocks 992, 995, 998 have interactions
         interaction_blocks = {992, 995, 998}
+
         async def mock_check_block(block_num):
             return block_num in interaction_blocks
-        oracle._check_block_for_interactions = AsyncMock(side_effect=mock_check_block)
-        
+
+        oracle._check_block_for_interactions = AsyncMock(
+            side_effect=mock_check_block
+        )
+
         # Mock fetch block
         def mock_fetch_block(block_num):
-            return {
-                "number": block_num,
-                "hash": f"0x{block_num:064x}"
-            }
+            return {"number": block_num, "hash": f"0x{block_num:064x}"}
+
         oracle.fetch_block_by_number = MagicMock(side_effect=mock_fetch_block)
-        
+
         await oracle.watch_addresses_for_interactions()
-        
+
         # Should submit blocks 992, 995, 998
         assert mock_block_submitter.submit_block_header.call_count == 3
-        mock_block_submitter.submit_block_header.assert_any_call(992, f"0x{992:064x}")
-        mock_block_submitter.submit_block_header.assert_any_call(995, f"0x{995:064x}")
-        mock_block_submitter.submit_block_header.assert_any_call(998, f"0x{998:064x}")
+        mock_block_submitter.submit_block_header.assert_any_call(
+            992, f"0x{992:064x}"
+        )
+        mock_block_submitter.submit_block_header.assert_any_call(
+            995, f"0x{995:064x}"
+        )
+        mock_block_submitter.submit_block_header.assert_any_call(
+            998, f"0x{998:064x}"
+        )
 
     @pytest.mark.asyncio
     async def test_watch_addresses_for_interactions_up_to_date(self):
         """Test when watcher is already up to date."""
         oracle = HeaderOracle()
-        oracle.watched_addresses = {"0x742d35cc6634c0532925a3b844bc9e7595f0beb7"}
+        oracle.watched_addresses = {
+            "0x742d35cc6634c0532925a3b844bc9e7595f0beb7"
+        }
         oracle.config = MagicMock()
         oracle.config.mode_config.lookback_blocks = 10
-        
+
         # Mock BlockSubmitter
         mock_block_submitter = MagicMock()
-        mock_block_submitter.get_latest_block_number = AsyncMock(return_value=1000)
+        mock_block_submitter.get_latest_block_number = AsyncMock(
+            return_value=1000
+        )
         mock_block_submitter.submit_block_header = AsyncMock()
         oracle.block_submitter = mock_block_submitter
-        
+
         # Mock Web3
         oracle.source_w3 = MagicMock()
         oracle.source_w3.eth.block_number = 1000
-        
+
         oracle._check_block_for_interactions = AsyncMock()
         oracle.fetch_block_by_number = MagicMock()
-        
+
         await oracle.watch_addresses_for_interactions()
-        
+
         # Should not check or submit anything
         oracle._check_block_for_interactions.assert_not_called()
         mock_block_submitter.submit_block_header.assert_not_called()
@@ -758,54 +874,66 @@ class TestWatcherMode:
     async def test_watch_addresses_stops_on_submission_failure(self):
         """Test that watcher stops scanning on submission failure."""
         oracle = HeaderOracle()
-        oracle.watched_addresses = {"0x742d35cc6634c0532925a3b844bc9e7595f0beb7"}
+        oracle.watched_addresses = {
+            "0x742d35cc6634c0532925a3b844bc9e7595f0beb7"
+        }
         oracle.config = MagicMock()
         oracle.config.mode_config.lookback_blocks = 10
-        
+
         # Mock BlockSubmitter
         mock_block_submitter = MagicMock()
-        mock_block_submitter.get_latest_block_number = AsyncMock(return_value=990)
-        mock_block_submitter.submit_block_header = AsyncMock(return_value=False)  # Fail
+        mock_block_submitter.get_latest_block_number = AsyncMock(
+            return_value=990
+        )
+        mock_block_submitter.submit_block_header = AsyncMock(
+            return_value=False
+        )  # Fail
         oracle.block_submitter = mock_block_submitter
-        
+
         # Mock Web3
         oracle.source_w3 = MagicMock()
         oracle.source_w3.eth.block_number = 1000
-        
+
         # Mock check for interactions - blocks 992, 995 have interactions
         interaction_blocks = {992, 995}
+
         async def mock_check_block(block_num):
             return block_num in interaction_blocks
-        oracle._check_block_for_interactions = AsyncMock(side_effect=mock_check_block)
-        
+
+        oracle._check_block_for_interactions = AsyncMock(
+            side_effect=mock_check_block
+        )
+
         # Mock fetch block
         def mock_fetch_block(block_num):
-            return {
-                "number": block_num,
-                "hash": f"0x{block_num:064x}"
-            }
+            return {"number": block_num, "hash": f"0x{block_num:064x}"}
+
         oracle.fetch_block_by_number = MagicMock(side_effect=mock_fetch_block)
-        
+
         await oracle.watch_addresses_for_interactions()
-        
+
         # Should only attempt to submit block 992, then stop
-        mock_block_submitter.submit_block_header.assert_called_once_with(992, f"0x{992:064x}")
+        mock_block_submitter.submit_block_header.assert_called_once_with(
+            992, f"0x{992:064x}"
+        )
         # Should not reach block 995 due to failure
 
     @pytest.mark.asyncio
     async def test_watcher_run_mode(self, mock_oracle_config_watcher):
         """Test that HeaderOracle.run() uses watcher mode correctly."""
-        with patch('rofl_oracle.header_oracle.HeaderOracle._run_watcher_mode') as mock_run_watcher:
+        with patch(
+            "rofl_oracle.header_oracle.HeaderOracle._run_watcher_mode"
+        ) as mock_run_watcher:
             mock_run_watcher.return_value = None
-            
+
             oracle = HeaderOracle()
             oracle.config = mock_oracle_config_watcher
             oracle.source_w3 = MagicMock()
             oracle.event_listener = None
             oracle.watched_addresses = set()
-            
+
             await oracle.run()
-            
+
             # Should call watcher mode
             mock_run_watcher.assert_called_once()
 
@@ -814,25 +942,29 @@ class TestWatcherMode:
         """Test the watcher mode loop with interruption."""
         oracle = HeaderOracle()
         oracle.config = MagicMock()
-        oracle.config.mode_config.push_interval = 0.1  # Very short for testing
-        oracle.config.mode_config.watch_addresses = ["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"]
-        
+        oracle.config.mode_config = WatcherModeConfig(
+            watch_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"],
+            scan_interval=0.1,  # Very short for testing
+            batch_size=50,
+            lookback_blocks=100,
+        )
+
         # Mock watch_addresses_for_interactions
         oracle.watch_addresses_for_interactions = AsyncMock()
-        
+
         # Track call count
         call_count = 0
-        
+
         async def mock_watch():
             nonlocal call_count
             call_count += 1
             if call_count >= 3:  # Stop after 3 calls
                 raise KeyboardInterrupt("Test interruption")
-        
+
         oracle.watch_addresses_for_interactions.side_effect = mock_watch
-        
+
         # Should not raise the KeyboardInterrupt
         await oracle._run_watcher_mode()
-        
+
         # Should have been called multiple times
         assert oracle.watch_addresses_for_interactions.call_count >= 3

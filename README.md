@@ -45,7 +45,7 @@ The oracle supports three modes: **event_listener**, **push**, and **watcher**. 
 | `ROFL_ADAPTER_ADDRESS` | Address of the ROFLAdapter contract on Oasis Sapphire    | -                                    | **Yes**  |
 | `REQUEST_TIMEOUT`      | HTTP request timeout (seconds)                           | `30`                                 | No       |
 | `RETRY_COUNT`          | Number of retry attempts for operations                  | `3`                                  | No       |
-| `ORACLE_MODE`          | `event_listener`, `push`, or `watcher`                  | `event_listener`                     | No       |
+| `ORACLE_MODE`          | Operating mode: `event_listener`, `push`, or `watcher`   | `event_listener`                     | No       |
 
 ---
 
@@ -87,7 +87,7 @@ The oracle supports three modes: **event_listener**, **push**, and **watcher**. 
 
 ---
 
-**Note:**  
+**Note:**
 - All addresses must be valid EVM addresses (checksummed).
 - `LOCAL_PRIVATE_KEY` is only required for local mode/testing.
 - If a required variable is missing for the selected mode, the oracle will fail to start with a clear error.
@@ -109,9 +109,17 @@ without ROFL utilities. Should be a hex-encoded private key.
 Create a `.env` file or set environment variables:
 
 ```bash
+# Required for all modes
 export ROFL_ADAPTER_ADDRESS=0xYourROFLAdapterAddress
-export BLOCKHEADER_REQUESTER_ADDRESS=0xYourBlockHeaderRequesterAddress
 export SOURCE_RPC_URL=https://your-source-chain-rpc.com
+export ORACLE_MODE=event_listener
+
+# Required for event_listener mode
+export SOURCE_CONTRACT_ADDRESS=0xYourBlockHeaderRequesterAddress
+
+# Optional: configure other settings
+export POLLING_INTERVAL=12
+export LOOKBACK_BLOCKS=100
 ```
 
 ### 2. Run with Docker Compose
