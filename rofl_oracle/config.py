@@ -50,7 +50,7 @@ class EventListenerModeConfig:
         if self.contract_address is not None:
             if not self.contract_address:
                 raise ValueError(
-                    "Source contract address cannot be empty string (SOURCE_CONTRACT_ADDRESS). "
+                    "Source contract address cannot be empty string (BLOCKHEADER_REQUESTER_ADDRESS). "
                     "Use None for push oracle or watcher mode."
                 )
 
@@ -315,9 +315,9 @@ class OracleConfig:
         
         if oracle_mode == OracleMode.EVENT_LISTENER:
             mode_config = EventListenerModeConfig(
-                polling_interval=int(os.environ.get("POLLING_INTERVAL", "12")),
+                polling_interval=int(os.environ.get("SCAN_INTERVAL", "12")),
                 lookback_blocks=int(os.environ.get("LOOKBACK_BLOCKS", "100")),
-                contract_address=os.environ.get("SOURCE_CONTRACT_ADDRESS", "")
+                contract_address=os.environ.get("BLOCKHEADER_REQUESTER_ADDRESS", "")
             )
         elif oracle_mode == OracleMode.PUSH:
             mode_config = PushModeConfig(

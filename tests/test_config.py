@@ -892,11 +892,11 @@ class TestOracleConfig:
         os.environ,
         {
             "SOURCE_RPC_URL": "https://test.rpc",
-            "SOURCE_CONTRACT_ADDRESS": "0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d",
+            "BLOCKHEADER_REQUESTER_ADDRESS": "0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d",
             "ROFL_ADAPTER_ADDRESS": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0",
             "TARGET_RPC_URL": "https://testnet.sapphire.oasis.io",
             "ORACLE_MODE": "event_listener",
-            "POLLING_INTERVAL": "20",
+            "SCAN_INTERVAL": "20",
             "LOOKBACK_BLOCKS": "50",
             "REQUEST_TIMEOUT": "30",
             "RETRY_COUNT": "3",

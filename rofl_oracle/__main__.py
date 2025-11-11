@@ -74,7 +74,7 @@ async def main() -> None:
             "  - TARGET_RPC_URL: Target chain RPC endpoint (default: testnet)"
         )
         logger.error(
-            "  - SOURCE_CONTRACT_ADDRESS: BlockHeaderRequester contract address (leave empty for push oracle or watcher mode)"
+            "  - BLOCKHEADER_REQUESTER_ADDRESS: BlockHeaderRequester contract address (leave empty for push oracle or watcher mode)"
         )
         logger.error(
             "  - WATCH_ADDRESSES: Comma-separated addresses to watch (for watcher mode only)"
