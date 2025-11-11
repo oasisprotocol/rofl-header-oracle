@@ -33,15 +33,66 @@ The oracle is configured through environment variables defined in `compose.yaml`
 
 ### Environment Variables
 
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `PYTHONUNBUFFERED` | Disable Python output buffering for immediate log visibility | `1` | No |
-| `SOURCE_RPC_URL` | RPC endpoint for the source chain | `https://ethereum.publicnode.com` | No |
-| `SOURCE_CONTRACT_ADDRESS` | Address of the BlockHeaderRequester contract on source chain | - | **Yes** |
-| `TARGET_RPC_URL` | RPC endpoint for the target chain | `https://testnet.sapphire.oasis.io` | No |
-| `ROFL_ADAPTER_ADDRESS` | Address of the ROFLAdapter contract on Oasis Sapphire | - | **Yes** |
-| `POLLING_INTERVAL` | Seconds between event checks | `12` | No |
-| `LOCAL_PRIVATE_KEY` | Private key for local testing mode | - | **Yes** (Local Mode Only) |
+The oracle supports three modes: **event_listener**, **push**, and **watcher**. Some environment variables are required for all modes, while others are specific to a mode.
+
+#### **Common Variables (All Modes)**
+
+| Variable               | Description                                               | Default                              | Required |
+|------------------------|----------------------------------------------------------|--------------------------------------|----------|
+| `PYTHONUNBUFFERED`     | Disable Python output buffering for immediate logs       | `1`                                  | No       |
+| `SOURCE_RPC_URL`       | RPC endpoint for the source chain                        | `https://ethereum.publicnode.com`    | No       |
+| `TARGET_RPC_URL`       | RPC endpoint for the target chain                        | `https://testnet.sapphire.oasis.io`  | No       |
+| `ROFL_ADAPTER_ADDRESS` | Address of the ROFLAdapter contract on Oasis Sapphire    | -                                    | **Yes**  |
+| `REQUEST_TIMEOUT`      | HTTP request timeout (seconds)                           | `30`                                 | No       |
+| `RETRY_COUNT`          | Number of retry attempts for operations                  | `3`                                  | No       |
+| `ORACLE_MODE`          | `event_listener`, `push`, or `watcher`                  | `event_listener`                     | No       |
+
+---
+
+#### **Event Listener Mode (`ORACLE_MODE=event_listener`)**
+
+| Variable                   | Description                                                        | Default | Required |
+|----------------------------|--------------------------------------------------------------------|---------|----------|
+| `SOURCE_CONTRACT_ADDRESS`  | Address of the BlockHeaderRequester contract on source chain       | -       | **Yes**  |
+| `POLLING_INTERVAL`         | Seconds between event checks                                       | `12`    | No       |
+| `LOOKBACK_BLOCKS`          | Number of blocks to look back on startup                           | `100`   | No       |
+
+---
+
+#### **Push Mode (`ORACLE_MODE=push`)**
+
+| Variable           | Description                                   | Default | Required |
+|--------------------|-----------------------------------------------|---------|----------|
+| `PUSH_INTERVAL`    | Seconds between block pushes                  | `60`    | No       |
+| `PUSH_BATCH_SIZE`  | Max blocks to push per iteration              | `20`    | No       |
+
+---
+
+#### **Watcher Mode (`ORACLE_MODE=watcher`)**
+
+| Variable               | Description                                         | Default | Required |
+|------------------------|-----------------------------------------------------|---------|----------|
+| `WATCH_ADDRESSES`      | Comma-separated list of addresses to watch          | -       | **Yes**  |
+| `SCAN_INTERVAL`        | Seconds between scanning for interactions           | `60`    | No       |
+| `WATCHER_BATCH_SIZE`   | Max blocks to scan per iteration                    | `50`    | No       |
+| `LOOKBACK_BLOCKS`      | Number of blocks to look back on startup            | `100`   | No       |
+
+---
+
+#### **Local Mode (Testing Only)**
+
+| Variable            | Description                                | Default | Required           |
+|---------------------|--------------------------------------------|---------|--------------------|
+| `LOCAL_PRIVATE_KEY` | Private key for local testing mode         | -       | **Yes (Local Mode)** |
+
+---
+
+**Note:**  
+- All addresses must be valid EVM addresses (checksummed).
+- `LOCAL_PRIVATE_KEY` is only required for local mode/testing.
+- If a required variable is missing for the selected mode, the oracle will fail to start with a clear error.
+
+---
 
 #### Important Notes
 
@@ -59,7 +110,7 @@ Create a `.env` file or set environment variables:
 
 ```bash
 export ROFL_ADAPTER_ADDRESS=0xYourROFLAdapterAddress
-export SOURCE_CONTRACT_ADDRESS=0xYourBlockHeaderRequesterAddress
+export BLOCKHEADER_REQUESTER_ADDRESS=0xYourBlockHeaderRequesterAddress
 export SOURCE_RPC_URL=https://your-source-chain-rpc.com
 ```
 
