@@ -11,8 +11,8 @@ from rofl_oracle.config import (
     CommonConfig,
     OracleConfig,
     OracleMode,
-    PushOracleConfig,
-    WatcherConfig,
+    PushModeConfig,
+    WatcherModeConfig,
 )
 from rofl_oracle.header_oracle import HeaderOracle
 
@@ -51,7 +51,7 @@ def mock_common_config():
 @pytest.fixture
 def mock_push_oracle_config():
     """Create a mock push oracle config with short intervals for testing."""
-    return PushOracleConfig(
+    return PushModeConfig(
         push_interval=2,  # Short interval for testing
         batch_size=20,
     )
@@ -72,7 +72,7 @@ def mock_oracle_config(mock_common_config, mock_push_oracle_config):
 @pytest.fixture
 def mock_watcher_config():
     """Create a mock watcher config for watcher mode."""
-    return WatcherConfig(
+    return WatcherModeConfig(
         watch_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7", "0x1234567890123456789012345678901234567890"],
         scan_interval=5,
     )
@@ -97,7 +97,7 @@ class TestPushOracleMode:
     async def test_push_oracle_config_detection(self, mock_oracle_config):
         """Test that push oracle mode is correctly detected from config."""
         assert mock_oracle_config.oracle_mode == OracleMode.PUSH
-        assert isinstance(mock_oracle_config.mode_config, PushOracleConfig)
+        assert isinstance(mock_oracle_config.mode_config, PushModeConfig)
 
     @pytest.mark.asyncio
     async def test_push_oracle_initialization(self, mock_oracle_config):
@@ -459,14 +459,14 @@ class TestWatcherMode:
     async def test_watcher_config_detection(self, mock_oracle_config_watcher):
         """Test that watcher mode is correctly detected from config."""
         assert mock_oracle_config_watcher.oracle_mode == OracleMode.WATCHER
-        assert isinstance(mock_oracle_config_watcher.mode_config, WatcherConfig)
+        assert isinstance(mock_oracle_config_watcher.mode_config, WatcherModeConfig)
         assert len(mock_oracle_config_watcher.mode_config.watch_addresses) == 2
 
     @pytest.mark.asyncio
     async def test_watcher_config_validation(self):
         """Test watcher config validates addresses."""
         # Valid addresses should work
-        config = WatcherConfig(
+        config = WatcherModeConfig(
             watch_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"],
             scan_interval=5,
         )
@@ -475,14 +475,14 @@ class TestWatcherMode:
 
         # Invalid address should raise error
         with pytest.raises(ValueError, match="Invalid watch address"):
-            WatcherConfig(
+            WatcherModeConfig(
                 watch_addresses=["invalid-address"],
                 scan_interval=5,
             )
 
         # Empty list should raise error
         with pytest.raises(ValueError, match="Watch addresses list cannot be empty"):
-            WatcherConfig(
+            WatcherModeConfig(
                 watch_addresses=[],
                 scan_interval=5,
             )

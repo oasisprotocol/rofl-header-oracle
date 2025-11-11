@@ -11,7 +11,7 @@ from rofl_oracle.config import (
     CommonConfig,
     OracleConfig,
     OracleMode,
-    PushOracleConfig,
+    PushModeConfig,
 )
 from rofl_oracle.header_oracle import HeaderOracle
 
@@ -50,7 +50,7 @@ def mock_common_config():
 @pytest.fixture
 def mock_push_oracle_config():
     """Create a mock push oracle config with short intervals for testing."""
-    return PushOracleConfig(
+    return PushModeConfig(
         push_interval=2,  # Short interval for testing
         batch_size=20,
     )
@@ -75,7 +75,7 @@ class TestPushOracleMode:
     async def test_push_oracle_config_detection(self, mock_oracle_config):
         """Test that push oracle mode is correctly detected from config."""
         assert mock_oracle_config.oracle_mode == OracleMode.PUSH
-        assert isinstance(mock_oracle_config.mode_config, PushOracleConfig)
+        assert isinstance(mock_oracle_config.mode_config, PushModeConfig)
 
     @pytest.mark.asyncio
     async def test_push_oracle_initialization(self, mock_oracle_config):

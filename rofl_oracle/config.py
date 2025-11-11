@@ -23,7 +23,7 @@ class OracleMode(Enum):
     WATCHER = "watcher"                # Watch specific addresses for interactions
 
 @dataclass(frozen=True, slots=True)
-class EventListenerConfig:
+class EventListenerModeConfig:
     """Configuration specific to event listener mode."""
     
     polling_interval: int  # seconds between event polls
@@ -68,7 +68,7 @@ class EventListenerConfig:
 
 
 @dataclass(frozen=True, slots=True)
-class PushOracleConfig:
+class PushModeConfig:
     """Configuration specific to push oracle mode."""
     
     push_interval: int  # seconds between block pushes
@@ -88,7 +88,7 @@ class PushOracleConfig:
 
 
 @dataclass(frozen=True, slots=True)
-class WatcherConfig:
+class WatcherModeConfig:
     """Configuration specific to watcher mode."""
     
     watch_addresses: list[str]  # Addresses to watch in watcher mode
@@ -210,14 +210,14 @@ class OracleConfig:
     Attributes:
         common_config: Common configuration shared across all modes
         oracle_mode: The operating mode of the oracle
-        mode_config: Mode-specific configuration (EventListenerConfig, PushOracleConfig, or WatcherConfig)
+        mode_config: Mode-specific configuration (EventListenerModeConfig, PushModeConfig, or WatcherModeConfig)
         local_mode: Whether running in local mode (for testing)
         local_private_key: Private key for local mode (optional)
     """
 
     common_config: CommonConfig
     oracle_mode: OracleMode
-    mode_config: EventListenerConfig | PushOracleConfig | WatcherConfig
+    mode_config: EventListenerModeConfig | PushModeConfig | WatcherModeConfig
     local_mode: bool = False
     local_private_key: str | None = None
 
@@ -248,12 +248,12 @@ class OracleConfig:
                 ) from None
         
         # Validate mode-specific config matches oracle_mode
-        if self.oracle_mode == OracleMode.EVENT_LISTENER and not isinstance(self.mode_config, EventListenerConfig):
-            raise ValueError("Event listener mode requires EventListenerConfig")
-        elif self.oracle_mode == OracleMode.PUSH and not isinstance(self.mode_config, PushOracleConfig):
-            raise ValueError("Push oracle mode requires PushOracleConfig")
-        elif self.oracle_mode == OracleMode.WATCHER and not isinstance(self.mode_config, WatcherConfig):
-            raise ValueError("Watcher mode requires WatcherConfig")
+        if self.oracle_mode == OracleMode.EVENT_LISTENER and not isinstance(self.mode_config, EventListenerModeConfig):
+            raise ValueError("Event listener mode requires EventListenerModeConfig")
+        elif self.oracle_mode == OracleMode.PUSH and not isinstance(self.mode_config, PushModeConfig):
+            raise ValueError("Push oracle mode requires PushModeConfig")
+        elif self.oracle_mode == OracleMode.WATCHER and not isinstance(self.mode_config, WatcherModeConfig):
+            raise ValueError("Watcher mode requires WatcherModeConfig")
 
     @classmethod
     def from_env(cls, local_mode: bool = False) -> "OracleConfig":
@@ -311,16 +311,16 @@ class OracleConfig:
             )
         
         # Load mode-specific configuration
-        mode_config: EventListenerConfig | PushOracleConfig | WatcherConfig
+        mode_config: EventListenerModeConfig | PushModeConfig | WatcherModeConfig
         
         if oracle_mode == OracleMode.EVENT_LISTENER:
-            mode_config = EventListenerConfig(
+            mode_config = EventListenerModeConfig(
                 polling_interval=int(os.environ.get("POLLING_INTERVAL", "12")),
                 lookback_blocks=int(os.environ.get("LOOKBACK_BLOCKS", "100")),
                 contract_address=os.environ.get("SOURCE_CONTRACT_ADDRESS", "")
             )
         elif oracle_mode == OracleMode.PUSH:
-            mode_config = PushOracleConfig(
+            mode_config = PushModeConfig(
                 push_interval=int(os.environ.get("PUSH_INTERVAL", "60")),
                 batch_size=int(os.environ.get("PUSH_BATCH_SIZE", "20")),
             )
@@ -342,7 +342,7 @@ class OracleConfig:
             if len(watch_addresses) == 0:
                 raise ValueError("WATCH_ADDRESSES cannot be empty for watcher mode")
             
-            mode_config = WatcherConfig(
+            mode_config = WatcherModeConfig(
                 scan_interval=int(os.environ.get("SCAN_INTERVAL", "60")),
                 batch_size=int(os.environ.get("WATCHER_BATCH_SIZE", "50")),
                 lookback_blocks=int(os.environ.get("LOOKBACK_BLOCKS", "100")),
@@ -379,20 +379,20 @@ class OracleConfig:
         logger.info(f"  Retry Count: {self.common_config.retry_count}")
 
         if self.oracle_mode == OracleMode.EVENT_LISTENER:
-            assert isinstance(self.mode_config, EventListenerConfig)
+            assert isinstance(self.mode_config, EventListenerModeConfig)
             logger.info("Event Listener Settings:")
             logger.info(f"  Contract Address: {self.mode_config.contract_address}")
             logger.info(f"  Polling Interval: {self.mode_config.polling_interval} seconds")
             logger.info(f"  Lookback Blocks: {self.mode_config.lookback_blocks}")
             
         elif self.oracle_mode == OracleMode.PUSH:
-            assert isinstance(self.mode_config, PushOracleConfig)
+            assert isinstance(self.mode_config, PushModeConfig)
             logger.info("Push Oracle Settings:")
             logger.info(f"  Push Interval: {self.mode_config.push_interval} seconds")
             logger.info(f"  Batch Size: {self.mode_config.batch_size}")
             
         elif self.oracle_mode == OracleMode.WATCHER:
-            assert isinstance(self.mode_config, WatcherConfig)
+            assert isinstance(self.mode_config, WatcherModeConfig)
             logger.info("Watcher Settings:")
             logger.info(f"  Scan Interval: {self.mode_config.scan_interval} seconds")
             logger.info(f"  Batch Size: {self.mode_config.batch_size}")
