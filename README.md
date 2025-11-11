@@ -70,12 +70,25 @@ The oracle supports three modes: **event_listener**, **push**, and **watcher**. 
 
 #### **Watcher Mode (`ORACLE_MODE=watcher`)**
 
-| Variable               | Description                                         | Default | Required |
-|------------------------|-----------------------------------------------------|---------|----------|
-| `WATCH_ADDRESSES`      | Comma-separated list of addresses to watch          | -       | **Yes**  |
-| `SCAN_INTERVAL`        | Seconds between scanning for interactions           | `60`    | No       |
-| `WATCHER_BATCH_SIZE`   | Max blocks to scan per iteration                    | `50`    | No       |
-| `LOOKBACK_BLOCKS`      | Number of blocks to look back on startup            | `100`   | No       |
+| Variable                        | Description                                         | Default | Required |
+|---------------------------------|-----------------------------------------------------|---------|----------|
+| `WATCH_ADDRESSES`               | Comma-separated list of addresses to watch          | -       | **Yes**  |
+| `SCAN_INTERVAL`                 | Seconds between scanning for interactions           | `60`    | No       |
+| `WATCHER_BATCH_SIZE`            | Max blocks to scan per iteration                    | `50`    | No       |
+| `LOOKBACK_BLOCKS`               | Number of blocks to look back on startup            | `100`   | No       |
+| `ENABLE_INTERNAL_TX_DETECTION`  | Enable internal transaction detection               | `false` | No       |
+
+**Internal Transaction Detection:**
+
+When `ENABLE_INTERNAL_TX_DETECTION=true`, the watcher will also detect interactions
+that occur via internal transactions (contract-to-contract calls). This feature:
+
+- **Requires:** Archive node with `debug_traceTransaction` API support
+- **Performance:** Significantly slower due to tracing overhead (trace each transaction)
+- **Use case:** Critical when watched addresses primarily interact via smart contracts
+- **Recommended:** Only enable if you have access to archive nodes and need comprehensive tracking
+
+Without this feature, only direct (external) transactions to/from watched addresses are detected.
 
 ---
 
@@ -101,6 +114,13 @@ containerized environments. Without this, log output may be buffered and not
 appear immediately, making the oracle appear "stuck" when it's actually running normally.
 - **`LOCAL_PRIVATE_KEY`**: Required only when running in local mode for testing
 without ROFL utilities. Should be a hex-encoded private key.
+- **`ENABLE_INTERNAL_TX_DETECTION`**: When enabled in watcher mode, uses
+`debug_traceTransaction` to detect internal contract calls. This requires:
+  - Archive node access (full nodes won't work)
+  - Debug API enabled on the RPC endpoint
+  - May require premium RPC provider plans
+  - Significantly increases processing time (10-100x slower)
+  - Only use if absolutely necessary for your use case
 
 ## Usage
 

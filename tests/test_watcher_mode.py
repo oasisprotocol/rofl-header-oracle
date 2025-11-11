@@ -654,6 +654,11 @@ class TestWatcherMode:
         oracle.watched_addresses = {
             "0x742d35cc6634c0532925a3b844bc9e7595f0beb7"
         }
+        oracle.config = MagicMock()
+        oracle.config.mode_config = WatcherModeConfig(
+            watch_addresses=["0x742d35cc6634c0532925a3b844bc9e7595f0beb7"],
+            scan_interval=60,
+        )
         oracle.source_w3 = MagicMock()
 
         # Mock block with transaction hashes
@@ -687,6 +692,11 @@ class TestWatcherMode:
         oracle.watched_addresses = {
             "0x742d35cc6634c0532925a3b844bc9e7595f0beb7"
         }
+        oracle.config = MagicMock()
+        oracle.config.mode_config = WatcherModeConfig(
+            watch_addresses=["0x742d35cc6634c0532925a3b844bc9e7595f0beb7"],
+            scan_interval=60,
+        )
 
         # Mock block with full transaction objects
         block = {
@@ -718,6 +728,11 @@ class TestWatcherMode:
         oracle.watched_addresses = {
             "0x742d35cc6634c0532925a3b844bc9e7595f0beb7"
         }
+        oracle.config = MagicMock()
+        oracle.config.mode_config = WatcherModeConfig(
+            watch_addresses=["0x742d35cc6634c0532925a3b844bc9e7595f0beb7"],
+            scan_interval=60,
+        )
 
         # Mock block with no watched address interactions
         block = {
@@ -936,6 +951,201 @@ class TestWatcherMode:
 
             # Should call watcher mode
             mock_run_watcher.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_internal_transaction_detection_enabled(self):
+        """Test internal transaction detection when enabled."""
+        oracle = HeaderOracle()
+        oracle.watched_addresses = {
+            "0x742d35cc6634c0532925a3b844bc9e7595f0beb7"
+        }
+        oracle.config = MagicMock()
+        oracle.config.mode_config = WatcherModeConfig(
+            watch_addresses=["0x742d35cc6634c0532925a3b844bc9e7595f0beb7"],
+            scan_interval=60,
+            enable_internal_tx_detection=True,
+        )
+
+        # Mock block with transaction hash
+        block = {
+            "number": 1000,
+            "hash": "0xabc123",
+            "transactions": ["0xtxhash1"],
+        }
+        oracle.fetch_block_by_number = MagicMock(return_value=block)
+
+        # Mock get_transaction - no direct interaction
+        mock_tx = {
+            "from": "0x1111111111111111111111111111111111111111",
+            "to": "0x2222222222222222222222222222222222222222",
+        }
+        oracle.source_w3 = MagicMock()
+        oracle.source_w3.eth.get_transaction.return_value = mock_tx
+
+        # Mock internal transaction detection - finds internal interaction
+        oracle._check_internal_transactions = AsyncMock(return_value=True)
+
+        result = await oracle._check_block_for_interactions(1000)
+
+        assert result is True
+        oracle._check_internal_transactions.assert_called_once_with("0xtxhash1")
+
+    @pytest.mark.asyncio
+    async def test_internal_transaction_detection_disabled(self):
+        """Test that internal transaction detection is skipped when disabled."""
+        oracle = HeaderOracle()
+        oracle.watched_addresses = {
+            "0x742d35cc6634c0532925a3b844bc9e7595f0beb7"
+        }
+        oracle.config = MagicMock()
+        oracle.config.mode_config = WatcherModeConfig(
+            watch_addresses=["0x742d35cc6634c0532925a3b844bc9e7595f0beb7"],
+            scan_interval=60,
+            enable_internal_tx_detection=False,
+        )
+
+        # Mock block with transaction hash
+        block = {
+            "number": 1000,
+            "hash": "0xabc123",
+            "transactions": ["0xtxhash1"],
+        }
+        oracle.fetch_block_by_number = MagicMock(return_value=block)
+
+        # Mock get_transaction - no direct interaction
+        mock_tx = {
+            "from": "0x1111111111111111111111111111111111111111",
+            "to": "0x2222222222222222222222222222222222222222",
+        }
+        oracle.source_w3 = MagicMock()
+        oracle.source_w3.eth.get_transaction.return_value = mock_tx
+
+        # Mock internal transaction detection - should not be called
+        oracle._check_internal_transactions = AsyncMock(return_value=True)
+
+        result = await oracle._check_block_for_interactions(1000)
+
+        assert result is False
+        oracle._check_internal_transactions.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_check_internal_transactions_success(self):
+        """Test successful internal transaction detection."""
+        oracle = HeaderOracle()
+        oracle.watched_addresses = {
+            "0x742d35cc6634c0532925a3b844bc9e7595f0beb7"
+        }
+        oracle.source_w3 = MagicMock()
+
+        # Mock trace result with internal call to watched address
+        trace_result = {
+            "result": {
+                "type": "CALL",
+                "from": "0x1111111111111111111111111111111111111111",
+                "to": "0x2222222222222222222222222222222222222222",
+                "calls": [
+                    {
+                        "type": "CALL",
+                        "from": "0x2222222222222222222222222222222222222222",
+                        "to": "0x742d35cc6634c0532925a3b844bc9e7595f0beb7",
+                    }
+                ],
+            }
+        }
+        oracle.source_w3.provider.make_request = MagicMock(
+            return_value=trace_result
+        )
+
+        result = await oracle._check_internal_transactions("0xtxhash")
+
+        assert result is True
+        oracle.source_w3.provider.make_request.assert_called_once_with(
+            "debug_traceTransaction", ["0xtxhash", {"tracer": "callTracer"}]
+        )
+
+    @pytest.mark.asyncio
+    async def test_check_internal_transactions_not_found(self):
+        """Test internal transaction detection when no watched addresses involved."""
+        oracle = HeaderOracle()
+        oracle.watched_addresses = {
+            "0x742d35cc6634c0532925a3b844bc9e7595f0beb7"
+        }
+        oracle.source_w3 = MagicMock()
+
+        # Mock trace result with no watched addresses
+        trace_result = {
+            "result": {
+                "type": "CALL",
+                "from": "0x1111111111111111111111111111111111111111",
+                "to": "0x2222222222222222222222222222222222222222",
+                "calls": [
+                    {
+                        "type": "CALL",
+                        "from": "0x2222222222222222222222222222222222222222",
+                        "to": "0x3333333333333333333333333333333333333333",
+                    }
+                ],
+            }
+        }
+        oracle.source_w3.provider.make_request = MagicMock(
+            return_value=trace_result
+        )
+
+        result = await oracle._check_internal_transactions("0xtxhash")
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_check_internal_transactions_api_not_available(self):
+        """Test graceful handling when debug API is not available."""
+        oracle = HeaderOracle()
+        oracle.watched_addresses = {
+            "0x742d35cc6634c0532925a3b844bc9e7595f0beb7"
+        }
+        oracle.source_w3 = MagicMock()
+
+        # Mock API error (not supported)
+        oracle.source_w3.provider.make_request = MagicMock(
+            side_effect=Exception("Method not found")
+        )
+
+        result = await oracle._check_internal_transactions("0xtxhash")
+
+        # Should return False and not crash
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_check_trace_for_watched_addresses_nested(self):
+        """Test recursive trace checking with nested calls."""
+        oracle = HeaderOracle()
+        oracle.watched_addresses = {
+            "0x742d35cc6634c0532925a3b844bc9e7595f0beb7"
+        }
+
+        # Deeply nested trace with watched address
+        trace = {
+            "type": "CALL",
+            "from": "0x1111111111111111111111111111111111111111",
+            "to": "0x2222222222222222222222222222222222222222",
+            "calls": [
+                {
+                    "type": "CALL",
+                    "from": "0x2222222222222222222222222222222222222222",
+                    "to": "0x3333333333333333333333333333333333333333",
+                    "calls": [
+                        {
+                            "type": "CALL",
+                            "from": "0x3333333333333333333333333333333333333333",
+                            "to": "0x742d35cc6634c0532925a3b844bc9e7595f0beb7",
+                        }
+                    ],
+                }
+            ],
+        }
+
+        result = oracle._check_trace_for_watched_addresses(trace)
+
+        assert result is True
 
     @pytest.mark.asyncio
     async def test_watcher_run_loop(self):

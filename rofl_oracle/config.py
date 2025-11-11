@@ -135,12 +135,14 @@ class WatcherModeConfig:
         scan_interval: Seconds between scanning for interactions (env: SCAN_INTERVAL)
         batch_size: Maximum blocks to scan per iteration (env: WATCHER_BATCH_SIZE)
         lookback_blocks: Number of blocks to look back on startup (env: LOOKBACK_BLOCKS)
+        enable_internal_tx_detection: Enable internal transaction detection (env: ENABLE_INTERNAL_TX_DETECTION)
     """
 
     watch_addresses: list[str]
     scan_interval: int
     batch_size: int = 50
     lookback_blocks: int = 100
+    enable_internal_tx_detection: bool = False
 
     def __post_init__(self) -> None:
         """Validate watcher configuration."""
@@ -434,6 +436,10 @@ class OracleConfig:
                 batch_size=int(os.environ.get("WATCHER_BATCH_SIZE", "50")),
                 lookback_blocks=int(os.environ.get("LOOKBACK_BLOCKS", "100")),
                 watch_addresses=watch_addresses,
+                enable_internal_tx_detection=os.environ.get(
+                    "ENABLE_INTERNAL_TX_DETECTION", "false"
+                ).lower()
+                in ("true", "1", "yes"),
             )
 
         # Load oracle-level config
@@ -499,6 +505,9 @@ class OracleConfig:
             logger.info(f"  Batch Size: {self.mode_config.batch_size}")
             logger.info(
                 f"  Lookback Blocks: {self.mode_config.lookback_blocks}"
+            )
+            logger.info(
+                f"  Internal TX Detection: {'ENABLED' if self.mode_config.enable_internal_tx_detection else 'DISABLED'}"
             )
             logger.info(
                 f"  Watching {len(self.mode_config.watch_addresses)} address(es):"

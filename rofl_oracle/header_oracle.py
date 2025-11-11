@@ -442,6 +442,9 @@ class HeaderOracle:
         """
         Check if a block contains any interactions with watched addresses.
 
+        Checks both direct transactions and optionally internal transactions
+        (if enable_internal_tx_detection is enabled).
+
         :param block_number: Block number to check
         :return: True if interactions detected, False otherwise
         """
@@ -451,6 +454,10 @@ class HeaderOracle:
                 return False
 
             transactions = block.get("transactions", [])
+            assert isinstance(self.config.mode_config, WatcherModeConfig)
+            check_internal = (
+                self.config.mode_config.enable_internal_tx_detection
+            )
 
             # If transactions are just hashes, we need to fetch full transaction details
             if transactions and isinstance(transactions[0], str):
@@ -460,9 +467,25 @@ class HeaderOracle:
                         tx = self.source_w3.eth.get_transaction(tx_hash)
                         if self._is_watched_transaction(tx):
                             logger.debug(
-                                f"Found interaction in tx {tx_hash.hex() if isinstance(tx_hash, bytes) else tx_hash}"
+                                f"Found direct interaction in tx {tx_hash.hex() if isinstance(tx_hash, bytes) else tx_hash}"
                             )
                             return True
+
+                        # Check internal transactions if enabled
+                        if check_internal:
+                            tx_hash_str = (
+                                tx_hash.hex()
+                                if isinstance(tx_hash, bytes)
+                                else tx_hash
+                            )
+                            if await self._check_internal_transactions(
+                                tx_hash_str
+                            ):
+                                logger.debug(
+                                    f"Found internal interaction in tx {tx_hash_str}"
+                                )
+                                return True
+
                     except Exception as e:
                         logger.warning(
                             f"Error fetching transaction {tx_hash}: {e}"
@@ -474,9 +497,26 @@ class HeaderOracle:
                     if self._is_watched_transaction(tx):
                         tx_hash = tx.get("hash", "unknown")
                         logger.debug(
-                            f"Found interaction in tx {tx_hash.hex() if isinstance(tx_hash, bytes) else tx_hash}"
+                            f"Found direct interaction in tx {tx_hash.hex() if isinstance(tx_hash, bytes) else tx_hash}"
                         )
                         return True
+
+                    # Check internal transactions if enabled
+                    if check_internal:
+                        tx_hash = tx.get("hash")
+                        if tx_hash:
+                            tx_hash_str = (
+                                tx_hash.hex()
+                                if isinstance(tx_hash, bytes)
+                                else tx_hash
+                            )
+                            if await self._check_internal_transactions(
+                                tx_hash_str
+                            ):
+                                logger.debug(
+                                    f"Found internal interaction in tx {tx_hash_str}"
+                                )
+                                return True
 
             return False
 
@@ -503,9 +543,68 @@ class HeaderOracle:
 
         # Check 'to' address
         to_addr = tx.get("to", "").lower() if tx.get("to") else ""
-        # TODO: Could also check internal transactions via trace_transaction
-        # For now, this catches direct interactions
         return to_addr in self.watched_addresses
+
+    async def _check_internal_transactions(self, tx_hash: str) -> bool:
+        """
+        Check if a transaction has internal calls to watched addresses.
+
+        Uses debug_traceTransaction to detect internal transactions.
+        Requires archive node access and debug API support.
+
+        :param tx_hash: Transaction hash to trace
+        :return: True if internal transactions involve watched addresses
+        """
+        try:
+            trace_result = self.source_w3.provider.make_request(
+                "debug_traceTransaction",
+                [tx_hash, {"tracer": "callTracer"}],
+            )
+
+            if "result" not in trace_result:
+                return False
+
+            return self._check_trace_for_watched_addresses(
+                trace_result["result"]
+            )
+
+        except Exception as e:
+            logger.debug(
+                f"Internal transaction tracing not available or failed for {tx_hash}: {e}"
+            )
+            return False
+
+    def _check_trace_for_watched_addresses(self, trace: dict[str, Any]) -> bool:
+        """
+        Recursively check trace results for watched addresses.
+
+        :param trace: Trace result from debug_traceTransaction
+        :return: True if any call involves watched addresses
+        """
+        if not trace:
+            return False
+
+        # Check 'to' address in this call
+        to_addr = trace.get("to", "").lower() if trace.get("to") else ""
+        if to_addr in self.watched_addresses:
+            logger.debug(f"Found watched address in internal call: {to_addr}")
+            return True
+
+        # Check 'from' address
+        from_addr = trace.get("from", "").lower() if trace.get("from") else ""
+        if from_addr in self.watched_addresses:
+            logger.debug(
+                f"Found watched address as caller in internal call: {from_addr}"
+            )
+            return True
+
+        # Recursively check nested calls
+        calls = trace.get("calls", [])
+        for call in calls:
+            if self._check_trace_for_watched_addresses(call):
+                return True
+
+        return False
 
     async def shutdown(self) -> None:
         """Gracefully shutdown the oracle."""
