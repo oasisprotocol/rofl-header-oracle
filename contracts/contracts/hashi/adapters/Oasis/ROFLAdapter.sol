@@ -48,7 +48,8 @@ contract ROFLAdapter is BlockHashAdapter {
 
     /**
      * @notice Stores multiple block headers for a given chain
-     * @dev Only callable by the authorized ROFL application through Subcall authorization
+     * @dev Only callable by the authorized ROFL application through Subcall authorization,
+     *      and assumes block numbers are in ascending order
      * @param chainId The chain ID where the blocks exist
      * @param blockNumbers The block numbers to store the hashes for
      * @param blockHashes The block hashes to store
@@ -70,9 +71,7 @@ contract ROFLAdapter is BlockHashAdapter {
             lastStoredBlock[chainId] = blockNumbers[len - 1];
         }
 
-        for (uint256 i = 0; i < len; i++) {
-            _storeHash(chainId, blockNumbers[i], blockHashes[i]);
-        }
+        _storeHashes(chainId, blockNumbers, blockHashes);
     }
 
     function setOracle(address oracle) external {
