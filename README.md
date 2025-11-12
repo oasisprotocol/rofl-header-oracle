@@ -33,7 +33,9 @@ The oracle is configured through environment variables defined in `compose.yaml`
 
 ### Environment Variables
 
-The oracle supports three modes: **event_listener**, **push**, and **watcher**. Some environment variables are required for all modes, while others are specific to a mode.
+The oracle supports three modes: **event_listener**, **push**, and
+**watcher**. Some environment variables are required for all modes, while
+others are specific to a mode.
 
 #### **Common Variables (All Modes)**
 
@@ -86,11 +88,15 @@ When `ENABLE_INTERNAL_TX_DETECTION=true`, the watcher will also detect interacti
 that occur via internal transactions (contract-to-contract calls). This feature:
 
 - **Requires:** Archive node with `debug_traceTransaction` API support
-- **Performance:** Significantly slower due to tracing overhead (trace each transaction)
-- **Use case:** Critical when watched addresses primarily interact via smart contracts
-- **Recommended:** Only enable if you have access to archive nodes and need comprehensive tracking
+- **Performance:** Significantly slower due to tracing overhead (trace each
+  transaction)
+- **Use case:** Critical when watched addresses primarily interact via smart
+  contracts
+- **Recommended:** Only enable if you have access to archive nodes and need
+  comprehensive tracking
 
-Without this feature, only direct (external) transactions to/from watched addresses are detected.
+Without this feature, only direct (external) transactions to/from watched
+addresses are detected.
 
 ---
 
@@ -103,9 +109,11 @@ Without this feature, only direct (external) transactions to/from watched addres
 ---
 
 **Note:**
+
 - All addresses must be valid EVM addresses (checksummed).
 - `LOCAL_PRIVATE_KEY` is only required for local mode/testing.
-- If a required variable is missing for the selected mode, the oracle will fail to start with a clear error.
+- If a required variable is missing for the selected mode, the oracle will
+  fail to start with a clear error.
 
 ---
 
@@ -228,9 +236,11 @@ curl http://localhost:8080/health/ready
 
 The oracle includes production-grade error handling:
 
-- **Exponential Backoff**: Automatic retry with exponential backoff for transient failures
+- **Exponential Backoff**: Automatic retry with exponential backoff for
+  transient failures
 - **Circuit Breakers**: Prevents cascading failures when RPCs are down
-- **Retry Logic**: Configurable retry attempts (via `RETRY_COUNT`) for all critical operations
+- **Retry Logic**: Configurable retry attempts (via `RETRY_COUNT`) for all
+  critical operations
 - **Graceful Degradation**: Continues operating even with degraded connectivity
 
 ### Structured Logging
