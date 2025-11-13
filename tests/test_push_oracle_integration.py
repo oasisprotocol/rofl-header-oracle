@@ -151,7 +151,7 @@ class TestPushOracleMode:
             "hash": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
             "number": 1000,
         }
-        oracle.fetch_block_by_number = MagicMock(return_value=mock_block_data)
+        oracle.fetch_block_by_number = AsyncMock(return_value=mock_block_data)
 
         await oracle.push_latest_block_header()
 
@@ -185,7 +185,7 @@ class TestPushOracleMode:
         def mock_fetch_block(block_number):
             return {"hash": f"0x{block_number:064x}", "number": block_number}
 
-        oracle.fetch_block_by_number = MagicMock(side_effect=mock_fetch_block)
+        oracle.fetch_block_by_number = AsyncMock(side_effect=mock_fetch_block)
 
         await oracle.push_latest_block_header()
 
@@ -217,7 +217,7 @@ class TestPushOracleMode:
         oracle = HeaderOracle()
         oracle.block_submitter = mock_block_submitter
         oracle.source_w3 = mock_source_w3
-        oracle.fetch_block_by_number = MagicMock()
+        oracle.fetch_block_by_number = AsyncMock()
 
         await oracle.push_latest_block_header()
 
@@ -251,7 +251,7 @@ class TestPushOracleMode:
             "hash": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
             "number": 996,
         }
-        oracle.fetch_block_by_number = MagicMock(return_value=mock_block_data)
+        oracle.fetch_block_by_number = AsyncMock(return_value=mock_block_data)
 
         await oracle.push_latest_block_header()
 
@@ -281,7 +281,7 @@ class TestPushOracleMode:
         oracle.source_w3 = mock_source_w3
 
         # Mock fetch_block_by_number to return None (failure)
-        oracle.fetch_block_by_number = MagicMock(return_value=None)
+        oracle.fetch_block_by_number = AsyncMock(return_value=None)
 
         await oracle.push_latest_block_header()
 
@@ -310,7 +310,7 @@ class TestPushOracleMode:
 
         # Mock fetch_block_by_number to return block without hash
         mock_block_data = {"number": 996}  # No hash
-        oracle.fetch_block_by_number = MagicMock(return_value=mock_block_data)
+        oracle.fetch_block_by_number = AsyncMock(return_value=mock_block_data)
 
         await oracle.push_latest_block_header()
 
@@ -464,7 +464,7 @@ class TestPushOracleMode:
             ),
             "number": 996,
         }
-        oracle.fetch_block_by_number = MagicMock(return_value=mock_block_data)
+        oracle.fetch_block_by_number = AsyncMock(return_value=mock_block_data)
 
         await oracle.push_latest_block_header()
 
