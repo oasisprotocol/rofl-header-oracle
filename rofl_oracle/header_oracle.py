@@ -521,8 +521,8 @@ class HeaderOracle:
             )
 
             # If transactions are just hashes, we need to fetch full transaction details
-            if transactions and isinstance(transactions[0], str):
-                # Transactions are hashes, need to fetch details
+            if transactions and isinstance(transactions[0], str | bytes):
+                # Transactions are hashes (str or HexBytes), need to fetch details
                 for tx_hash in transactions:
                     try:
                         tx = self.source_w3.eth.get_transaction(tx_hash)
