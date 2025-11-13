@@ -32,10 +32,9 @@ class EventListenerModeConfig:
     This mode listens for BlockHeaderRequested events from a source chain contract
     and submits the requested block headers to the target chain.
 
-    Attributes:
-        polling_interval: Seconds between event polling checks (env: POLLING_INTERVAL)
-        lookback_blocks: Number of blocks to look back on startup (env: LOOKBACK_BLOCKS)
-        contract_address: Address of BlockHeaderRequester contract (env: SOURCE_CONTRACT_ADDRESS)
+    :cvar polling_interval: Seconds between event polling checks (env: POLLING_INTERVAL)
+    :cvar lookback_blocks: Number of blocks to look back on startup (env: LOOKBACK_BLOCKS)
+    :cvar contract_address: Address of BlockHeaderRequester contract (env: SOURCE_CONTRACT_ADDRESS)
     """
 
     polling_interval: int
@@ -94,9 +93,8 @@ class PushModeConfig:
     This mode continuously pushes the latest block headers from the source chain
     to the target chain without requiring explicit requests.
 
-    Attributes:
-        push_interval: Seconds between block pushes (env: PUSH_INTERVAL)
-        batch_size: Maximum blocks to push per iteration (env: PUSH_BATCH_SIZE)
+    :cvar push_interval: Seconds between block pushes (env: PUSH_INTERVAL)
+    :cvar batch_size: Maximum blocks to push per iteration (env: PUSH_BATCH_SIZE)
     """
 
     push_interval: int
@@ -130,12 +128,11 @@ class WatcherModeConfig:
     This mode watches specific addresses for interactions and pushes block headers
     only when those addresses have on-chain activity.
 
-    Attributes:
-        watch_addresses: List of addresses to monitor (env: WATCH_ADDRESSES, comma-separated)
-        scan_interval: Seconds between scanning for interactions (env: SCAN_INTERVAL)
-        batch_size: Maximum blocks to scan per iteration (env: WATCHER_BATCH_SIZE)
-        lookback_blocks: Number of blocks to look back on startup (env: LOOKBACK_BLOCKS)
-        enable_internal_tx_detection: Enable internal transaction detection (env: ENABLE_INTERNAL_TX_DETECTION)
+    :cvar watch_addresses: List of addresses to monitor (env: WATCH_ADDRESSES, comma-separated)
+    :cvar scan_interval: Seconds between scanning for interactions (env: SCAN_INTERVAL)
+    :cvar batch_size: Maximum blocks to scan per iteration (env: WATCHER_BATCH_SIZE)
+    :cvar lookback_blocks: Number of blocks to look back on startup (env: LOOKBACK_BLOCKS)
+    :cvar enable_internal_tx_detection: Enable internal transaction detection (env: ENABLE_INTERNAL_TX_DETECTION)
     """
 
     watch_addresses: list[str]
@@ -200,13 +197,12 @@ class CommonConfig:
 
     These settings apply regardless of which operating mode the oracle is in.
 
-    Attributes:
-        source_rpc_url: HTTP(S) RPC endpoint for the source chain (env: SOURCE_RPC_URL)
-        source_chain_id: Chain ID for the source chain (auto-detected from RPC)
-        target_rpc_url: HTTP(S) RPC endpoint for the target chain (env: TARGET_RPC_URL)
-        request_timeout: HTTP request timeout in seconds (env: REQUEST_TIMEOUT)
-        retry_count: Number of retry attempts for operations (env: RETRY_COUNT)
-        target_contract_address: Address of ROFLAdapter on target chain (env: ROFL_ADAPTER_ADDRESS)
+    :cvar source_rpc_url: HTTP(S) RPC endpoint for the source chain (env: SOURCE_RPC_URL)
+    :cvar source_chain_id: Chain ID for the source chain (auto-detected from RPC)
+    :cvar target_rpc_url: HTTP(S) RPC endpoint for the target chain (env: TARGET_RPC_URL)
+    :cvar request_timeout: HTTP request timeout in seconds (env: REQUEST_TIMEOUT)
+    :cvar retry_count: Number of retry attempts for operations (env: RETRY_COUNT)
+    :cvar target_contract_address: Address of ROFLAdapter on target chain (env: ROFL_ADAPTER_ADDRESS)
     """
 
     source_rpc_url: str
@@ -285,12 +281,11 @@ class CommonConfig:
 class OracleConfig:
     """Main configuration for the ROFL Oracle.
 
-    Attributes:
-        common_config: Common configuration shared across all modes
-        oracle_mode: The operating mode of the oracle
-        mode_config: Mode-specific configuration (EventListenerModeConfig, PushModeConfig, or WatcherModeConfig)
-        local_mode: Whether running in local mode (for testing)
-        local_private_key: Private key for local mode (optional)
+    :cvar common_config: Common configuration shared across all modes
+    :cvar oracle_mode: The operating mode of the oracle
+    :cvar mode_config: Mode-specific configuration (EventListenerModeConfig, PushModeConfig, or WatcherModeConfig)
+    :cvar local_mode: Whether running in local mode (for testing)
+    :cvar local_private_key: Private key for local mode (optional)
     """
 
     common_config: CommonConfig

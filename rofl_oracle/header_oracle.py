@@ -244,7 +244,7 @@ class HeaderOracle:
             logger.error(f"Exception type: {type(e).__name__}", exc_info=True)
             raise
 
-    def fetch_block_by_number(self, block_number: int) -> BlockData | None:
+    async def fetch_block_by_number(self, block_number: int) -> BlockData | None:
         """
         Fetch a specific block by number from the source chain with retry logic.
 
@@ -256,13 +256,11 @@ class HeaderOracle:
             async def _fetch() -> BlockData:
                 return self.source_w3.eth.get_block(block_number)
 
-            block = asyncio.get_event_loop().run_until_complete(
-                retry_with_backoff(
-                    _fetch,
-                    config=self.retry_config,
-                    circuit_breaker=self.source_rpc_circuit,
-                    error_types=(Exception,),
-                )
+            block = await retry_with_backoff(
+                _fetch,
+                config=self.retry_config,
+                circuit_breaker=self.source_rpc_circuit,
+                error_types=(Exception,),
             )
             return block
         except Exception as e:
@@ -297,7 +295,7 @@ class HeaderOracle:
                 logger.info(f"  Event Block: {event.event_block_number}")
 
                 # Fetch the requested block
-                block = self.fetch_block_by_number(event.block_number)
+                block = await self.fetch_block_by_number(event.block_number)
 
                 if block:
                     block_hash = block.get("hash")
@@ -365,7 +363,7 @@ class HeaderOracle:
                         f"Pushing latest block header: {next_block_to_push}"
                     )
                     # Fetch the block at the current contract block number
-                    block = self.fetch_block_by_number(next_block_to_push)
+                    block = await self.fetch_block_by_number(next_block_to_push)
 
                     if block:
                         block_hash = block.get("hash")
@@ -460,7 +458,7 @@ class HeaderOracle:
                     )
 
                     # Fetch and push the block
-                    block = self.fetch_block_by_number(block_number)
+                    block = await self.fetch_block_by_number(block_number)
                     if block:
                         block_hash = block.get("hash")
                         if block_hash is not None:
@@ -513,7 +511,7 @@ class HeaderOracle:
         :return: True if interactions detected, False otherwise
         """
         try:
-            block = self.fetch_block_by_number(block_number)
+            block = await self.fetch_block_by_number(block_number)
             if not block:
                 return False
 
