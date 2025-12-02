@@ -113,7 +113,7 @@ class RoflUtility:
         Returns:
             Hex string without 0x prefix
         """
-        if isinstance(value, (bytes, bytearray)):
+        if isinstance(value, bytes | bytearray):
             return value.hex()
         # It's a string - remove 0x prefix if present
         return str(value).removeprefix("0x").removeprefix("0X")

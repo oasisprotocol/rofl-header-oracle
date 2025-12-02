@@ -223,7 +223,7 @@ class BlockSubmitter:
                     "ReadTimeout" in error_str or "timeout" in error_str.lower()
                 ):
                     logger.warning(
-                        f"Batch transaction timed out - transaction likely succeeded (check explorer)"
+                        "Batch transaction timed out - transaction likely succeeded (check explorer)"
                     )
                     return True
                 else:
