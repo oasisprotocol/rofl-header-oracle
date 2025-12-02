@@ -6,18 +6,18 @@ import {BlockHashAdapter} from "../BlockHashAdapter.sol";
 
 /**
  * @title ROFLAdapter
- * @notice Adapter for Oasis Sapphire ROFL (Runtime OFf-chain Logic) applications
+ * @notice Adapter for Oasis ROFL
  */
 contract ROFLAdapter is BlockHashAdapter {
     string public constant PROVIDER = "oasis";
 
     bytes21 public immutable roflAppID;
-    address public ROFL_ORACLE;
+    address public ROFL_REPORTER;
     uint256 public immutable SOURCE_CHAIN_ID;
 
     mapping(uint256 chainId => uint256 lastBlockNumber) public lastStoredBlock;
 
-    error UnauthorizedROFLOracle();
+    error UnauthorizedROFLReporter();
 
     constructor(bytes21 _roflAppID, uint256 _sourceChainId) {
         roflAppID = _roflAppID;
@@ -36,9 +36,9 @@ contract ROFLAdapter is BlockHashAdapter {
         uint256 blockNumber,
         bytes32 blockHash
     ) external {
-        // Verify that the caller is authorized oracle address
-        if (msg.sender != ROFL_ORACLE) {
-            revert UnauthorizedROFLOracle();
+        // Verify that the caller is authorized reporter address
+        if (msg.sender != ROFL_REPORTER) {
+            revert UnauthorizedROFLReporter();
         }
 
         lastStoredBlock[chainId] = blockNumber;
@@ -59,9 +59,9 @@ contract ROFLAdapter is BlockHashAdapter {
         uint256[] calldata blockNumbers,
         bytes32[] calldata blockHashes
     ) external {
-        // Verify that the caller is authorized oracle address
-        if (msg.sender != ROFL_ORACLE) {
-            revert UnauthorizedROFLOracle();
+        // Verify that the caller is authorized reporter address
+        if (msg.sender != ROFL_REPORTER) {
+            revert UnauthorizedROFLReporter();
         }
 
         uint256 len = blockNumbers.length;
@@ -74,8 +74,8 @@ contract ROFLAdapter is BlockHashAdapter {
         _storeHashes(chainId, blockNumbers, blockHashes);
     }
 
-    function setOracle(address oracle) external {
+    function setReporter(address reporter) external {
         Subcall.roflEnsureAuthorizedOrigin(roflAppID);
-        ROFL_ORACLE = oracle;
+        ROFL_REPORTER = reporter;
     }
 }

@@ -158,32 +158,27 @@ class HeaderOracle:
             )
             logger.debug("Block submitter initialized")
 
-            # Register oracle address if in ROFL mode
+            # Register reporter address if in ROFL mode
             if not config.local_mode:
-                oracle_address = self.contract_utility.w3.eth.default_account
-                logger.info(f"Oracle address: {oracle_address}")
+                reporter_address = self.contract_utility.w3.eth.default_account
+                logger.info(f"Reporter address: {reporter_address}")
 
-                # Check if oracle is already registered
-                current_oracle = (
-                    await self.block_submitter.get_registered_oracle()
+                # Check if reporter is already registered
+                current_reporter = (
+                    await self.block_submitter.get_registered_reporter()
                 )
 
-                if current_oracle != oracle_address:
+                if current_reporter != reporter_address:
                     logger.info(
-                        "Registering oracle address with ROFLAdapter..."
+                        "Registering reporter address with ROFLAdapter..."
                     )
-                    success = await self.block_submitter.register_oracle()
-                    if success:
-                        logger.info(
-                            f"Oracle address {oracle_address} registered successfully"
-                        )
-                    else:
-                        raise Exception(
-                            f"Failed to register oracle address {oracle_address}"
-                        )
+                    await self.block_submitter.register_reporter()
+                    logger.info(
+                        f"Reporter address {reporter_address} registered successfully"
+                    )
                 else:
                     logger.info(
-                        f"Oracle address {oracle_address} already registered"
+                        f"Reporter address {reporter_address} already registered"
                     )
 
             # Initialize event processor
@@ -218,7 +213,11 @@ class HeaderOracle:
                 self.watched_addresses = {
                     addr.lower() for addr in config.mode_config.watch_addresses
                 }
-                self.processed_blocks = set()
+                # In-memory scan position tracking. Intentionally not persisted:
+                # - On restart, recovers from contract's lastStoredBlock state
+                # - Ensures no blocks are permanently skipped even if process crashes
+                # - Trades potential re-scanning for data integrity
+                self.last_scanned_block: int | None = None
             elif config.oracle_mode == OracleMode.PUSH:
                 logger.info("Push oracle mode - will push latest block headers")
                 self.event_listener = None
@@ -357,12 +356,13 @@ class HeaderOracle:
                     next_block_to_push = last_stored_block + 1
                     end_block = min(latest_block_number, last_stored_block + 20)
 
-                while next_block_to_push <= end_block:
-                    logger.info(
-                        f"Pushing latest block header: {next_block_to_push}"
-                    )
-                    # Fetch the block at the current contract block number
-                    block = await self.fetch_block_by_number(next_block_to_push)
+                # Collect blocks to submit in batch
+                block_numbers = []
+                block_hashes = []
+
+                for block_num in range(next_block_to_push, end_block + 1):
+                    logger.info(f"Fetching block {block_num} for batch submission")
+                    block = await self.fetch_block_by_number(block_num)
 
                     if block:
                         block_hash = block.get("hash")
@@ -377,33 +377,32 @@ class HeaderOracle:
                             if not block_hash_hex.startswith("0x"):
                                 block_hash_hex = "0x" + block_hash_hex
 
-                            # Submit the block header using BlockSubmitter
-                            success = (
-                                await self.block_submitter.submit_block_header(
-                                    next_block_to_push, block_hash_hex
-                                )
-                            )
-
-                            if success:
-                                logger.info(
-                                    f"Successfully pushed block {next_block_to_push} header to Sapphire"
-                                )
-                                next_block_to_push += 1
-                            else:
-                                logger.error(
-                                    f"Failed to push block {next_block_to_push} header"
-                                )
-                                break
+                            block_numbers.append(block_num)
+                            block_hashes.append(block_hash_hex)
                         else:
-                            logger.error(
-                                f"Block {next_block_to_push} has no hash"
-                            )
+                            logger.error(f"Block {block_num} has no hash")
                             break
                     else:
-                        logger.error(
-                            f"Could not fetch latest block {next_block_to_push}"
-                        )
+                        logger.error(f"Could not fetch block {block_num}")
                         break
+
+                # Submit all blocks in a single batch transaction
+                if block_numbers:
+                    logger.info(
+                        f"Submitting batch of {len(block_numbers)} blocks: {block_numbers[0]} to {block_numbers[-1]}"
+                    )
+                    success = await self.block_submitter.submit_block_headers_batch(
+                        block_numbers, block_hashes
+                    )
+
+                    if success:
+                        logger.info(
+                            f"Successfully pushed {len(block_numbers)} block headers to Sapphire"
+                        )
+                    else:
+                        logger.error(
+                            f"Failed to push batch of {len(block_numbers)} block headers"
+                        )
 
             except Exception as e:
                 logger.error(
@@ -419,79 +418,120 @@ class HeaderOracle:
         try:
             # Get the latest block from source chain
             latest_block_number = self.source_w3.eth.block_number
+            assert isinstance(self.config.mode_config, WatcherModeConfig)
 
-            # Get the last processed block (stored on target chain)
-            last_stored_block = (
-                await self.block_submitter.get_latest_block_number()
-            )
+            # Determine starting point using last_scanned_block (in-memory state)
+            # Track the last processed block for logging purposes
+            last_processed_block: int | None = None
 
-            # Determine starting point
-            if last_stored_block is None or last_stored_block == 0:
-                assert isinstance(self.config.mode_config, WatcherModeConfig)
-                start_block = max(
-                    0,
-                    latest_block_number
-                    - self.config.mode_config.lookback_blocks,
-                )
+            if self.last_scanned_block is not None:
+                # Normal operation: continue from last scanned position
+                start_block = self.last_scanned_block + 1
+                last_processed_block = self.last_scanned_block
             else:
-                start_block = last_stored_block + 1
+                # First run or restart: check target chain for recovery
+                last_stored_block = (
+                    await self.block_submitter.get_latest_block_number()
+                )
+                if last_stored_block is not None and last_stored_block > 0:
+                    start_block = last_stored_block + 1
+                    last_processed_block = last_stored_block
+                    logger.info(f"Resuming from last stored block {last_stored_block}")
+                else:
+                    start_block = max(
+                        0,
+                        latest_block_number
+                        - self.config.mode_config.lookback_blocks,
+                    )
 
-            # Don't scan too far ahead
-            end_block = min(latest_block_number, start_block + 50)
+            # Don't scan too far ahead - use configured batch size
+            batch_size = self.config.mode_config.batch_size
+            end_block = min(latest_block_number, start_block + batch_size - 1)
 
             if start_block > latest_block_number:
-                logger.debug(
-                    f"Watcher is up to date (last: {last_stored_block}, latest: {latest_block_number})"
+                logger.info(
+                    f"Watcher is up to date (last: {last_processed_block}, latest: {latest_block_number})"
                 )
                 return
 
+            num_blocks = end_block - start_block + 1
             logger.info(
-                f"Scanning blocks {start_block} to {end_block} for watched address interactions"
+                f"Scanning {num_blocks} blocks ({start_block} to {end_block}) for watched address interactions"
             )
 
             # Scan blocks for interactions with watched addresses
+            blocks_with_interactions = []
+            block_hashes_to_submit = []
+            last_successful_block = start_block - 1  # Track actual progress
+
             for block_number in range(start_block, end_block + 1):
-                if await self._check_block_for_interactions(block_number):
+                # Log progress every 10 blocks
+                if (block_number - start_block) % 10 == 0 and block_number != start_block:
+                    logger.info(f"  Progress: scanned {block_number - start_block}/{num_blocks} blocks...")
+
+                try:
+                    if await self._check_block_for_interactions(block_number):
+                        logger.info(
+                            f"Interaction detected in block {block_number}"
+                        )
+
+                        # Fetch the block to get its hash
+                        block = await self.fetch_block_by_number(block_number)
+                        if block:
+                            block_hash = block.get("hash")
+                            if block_hash is not None:
+                                # Convert block_hash to hex string with 0x prefix
+                                block_hash_hex = (
+                                    block_hash.hex()
+                                    if isinstance(block_hash, bytes)
+                                    else block_hash
+                                )
+                                if not block_hash_hex.startswith("0x"):
+                                    block_hash_hex = "0x" + block_hash_hex
+
+                                blocks_with_interactions.append(block_number)
+                                block_hashes_to_submit.append(block_hash_hex)
+                            else:
+                                logger.error(f"Block {block_number} has no hash, stopping scan")
+                                break  # Stop and retry this block next cycle
+                        else:
+                            logger.error(f"Could not fetch block {block_number}, stopping scan")
+                            break  # Stop and retry this block next cycle
+
+                    # Block was successfully processed (scanned, and if interaction found, hash fetched)
+                    last_successful_block = block_number
+
+                except Exception as e:
+                    logger.error(f"Error processing block {block_number}: {e}")
+                    break  # Stop and retry this block next cycle
+
+            # Submit all blocks with interactions in a single batch
+            if blocks_with_interactions:
+                logger.info(
+                    f"Submitting batch of {len(blocks_with_interactions)} blocks with interactions"
+                )
+                success = await self.block_submitter.submit_block_headers_batch(
+                    blocks_with_interactions, block_hashes_to_submit
+                )
+
+                if success:
                     logger.info(
-                        f"Interaction detected in block {block_number}, pushing block header"
+                        f"Successfully pushed {len(blocks_with_interactions)} block headers with interactions"
+                    )
+                else:
+                    logger.error(
+                        f"Failed to push batch of {len(blocks_with_interactions)} block headers"
                     )
 
-                    # Fetch and push the block
-                    block = await self.fetch_block_by_number(block_number)
-                    if block:
-                        block_hash = block.get("hash")
-                        if block_hash is not None:
-                            # Convert block_hash to hex string with 0x prefix
-                            block_hash_hex = (
-                                block_hash.hex()
-                                if isinstance(block_hash, bytes)
-                                else block_hash
-                            )
-                            if not block_hash_hex.startswith("0x"):
-                                block_hash_hex = "0x" + block_hash_hex
+            # Update scan position to last successfully processed block
+            if last_successful_block >= start_block:
+                self.last_scanned_block = last_successful_block
 
-                            # Submit the block header
-                            success = (
-                                await self.block_submitter.submit_block_header(
-                                    block_number, block_hash_hex
-                                )
-                            )
-
-                            if success:
-                                logger.info(
-                                    f"Successfully pushed block {block_number} header with interaction"
-                                )
-                            else:
-                                logger.error(
-                                    f"Failed to push block {block_number} header"
-                                )
-                                break  # Stop on failure
-                        else:
-                            logger.error(f"Block {block_number} has no hash")
-                            break
-                    else:
-                        logger.error(f"Could not fetch block {block_number}")
-                        break
+            # Log summary
+            scanned_count = last_successful_block - start_block + 1 if last_successful_block >= start_block else 0
+            logger.info(
+                f"Scan complete: checked {scanned_count}/{num_blocks} blocks, found {len(blocks_with_interactions)} interaction(s)"
+            )
 
         except Exception as e:
             logger.error(
@@ -510,7 +550,8 @@ class HeaderOracle:
         :return: True if interactions detected, False otherwise
         """
         try:
-            block = await self.fetch_block_by_number(block_number)
+            # Fetch block with full transaction details to avoid individual tx fetches
+            block = self.source_w3.eth.get_block(block_number, full_transactions=True)
             if not block:
                 return False
 
@@ -520,64 +561,31 @@ class HeaderOracle:
                 self.config.mode_config.enable_internal_tx_detection
             )
 
-            # If transactions are just hashes, we need to fetch full transaction details
-            if transactions and isinstance(transactions[0], str | bytes):
-                # Transactions are hashes (str or HexBytes), need to fetch details
-                for tx_hash in transactions:
-                    try:
-                        tx = self.source_w3.eth.get_transaction(tx_hash)
-                        if self._is_watched_transaction(tx):
+            # Since we fetched with full_transactions=True, transactions are full objects
+            for tx in transactions:
+                if self._is_watched_transaction(tx):
+                    tx_hash = tx.get("hash", "unknown")
+                    logger.debug(
+                        f"Found direct interaction in tx {tx_hash.hex() if isinstance(tx_hash, bytes) else tx_hash}"
+                    )
+                    return True
+
+                # Check internal transactions if enabled
+                if check_internal:
+                    tx_hash = tx.get("hash")
+                    if tx_hash:
+                        tx_hash_str = (
+                            tx_hash.hex()
+                            if isinstance(tx_hash, bytes)
+                            else tx_hash
+                        )
+                        if await self._check_internal_transactions(
+                            tx_hash_str
+                        ):
                             logger.debug(
-                                f"Found direct interaction in tx {tx_hash.hex() if isinstance(tx_hash, bytes) else tx_hash}"
+                                f"Found internal interaction in tx {tx_hash_str}"
                             )
                             return True
-
-                        # Check internal transactions if enabled
-                        if check_internal:
-                            tx_hash_str = (
-                                tx_hash.hex()
-                                if isinstance(tx_hash, bytes)
-                                else tx_hash
-                            )
-                            if await self._check_internal_transactions(
-                                tx_hash_str
-                            ):
-                                logger.debug(
-                                    f"Found internal interaction in tx {tx_hash_str}"
-                                )
-                                return True
-
-                    except Exception as e:
-                        logger.warning(
-                            f"Error fetching transaction {tx_hash}: {e}"
-                        )
-                        continue
-            else:
-                # Transactions are full objects
-                for tx in transactions:
-                    if self._is_watched_transaction(tx):
-                        tx_hash = tx.get("hash", "unknown")
-                        logger.debug(
-                            f"Found direct interaction in tx {tx_hash.hex() if isinstance(tx_hash, bytes) else tx_hash}"
-                        )
-                        return True
-
-                    # Check internal transactions if enabled
-                    if check_internal:
-                        tx_hash = tx.get("hash")
-                        if tx_hash:
-                            tx_hash_str = (
-                                tx_hash.hex()
-                                if isinstance(tx_hash, bytes)
-                                else tx_hash
-                            )
-                            if await self._check_internal_transactions(
-                                tx_hash_str
-                            ):
-                                logger.debug(
-                                    f"Found internal interaction in tx {tx_hash_str}"
-                                )
-                                return True
 
             return False
 

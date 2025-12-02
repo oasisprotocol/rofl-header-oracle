@@ -10,7 +10,8 @@ import { configVariable } from "hardhat/config";
 import {
   deployBlockHeaderRequester,
   requestBlockHeader,
-  checkBlockRequested
+  checkBlockRequested,
+  deployRoflAdapter,
 } from "./tasks/index.js";
 
 const config: HardhatUserConfig = {
@@ -19,14 +20,15 @@ const config: HardhatUserConfig = {
     deployBlockHeaderRequester,
     requestBlockHeader,
     checkBlockRequested,
+    deployRoflAdapter,
   ],
   solidity: {
     profiles: {
       default: {
-        version: "0.8.28",
+        version: "0.8.24",
       },
       production: {
-        version: "0.8.28",
+        version: "0.8.24",
         settings: {
           optimizer: {
             enabled: true,
@@ -50,6 +52,18 @@ const config: HardhatUserConfig = {
       chainType: "l1",
       url: configVariable("SEPOLIA_RPC_URL"),
       accounts: [configVariable("SEPOLIA_PRIVATE_KEY")],
+    },
+    sapphireTestnet: {
+      type: "http",
+      chainType: "l1",
+      url: configVariable("SAPPHIRE_TESTNET_RPC_URL"),
+      accounts: [configVariable("SAPPHIRE_PRIVATE_KEY")],
+    },
+    sapphireMainnet: {
+      type: "http",
+      chainType: "l1",
+      url: configVariable("SAPPHIRE_MAINNET_RPC_URL"),
+      accounts: [configVariable("SAPPHIRE_PRIVATE_KEY")],
     },
   },
 };

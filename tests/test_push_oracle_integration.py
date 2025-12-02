@@ -130,12 +130,12 @@ class TestPushOracleMode:
     @pytest.mark.asyncio
     async def test_push_latest_block_header_first_run(self):
         """Test pushing block header when no blocks have been stored yet."""
-        # Mock BlockSubmitter
+        # Mock BlockSubmitter with batch submission
         mock_block_submitter = MagicMock()
         mock_block_submitter.get_latest_block_number = AsyncMock(
             return_value=None
         )  # No blocks stored
-        mock_block_submitter.submit_block_header = AsyncMock(return_value=True)
+        mock_block_submitter.submit_block_headers_batch = AsyncMock(return_value=True)
 
         # Mock Web3 source chain
         mock_source_w3 = MagicMock()
@@ -155,22 +155,22 @@ class TestPushOracleMode:
 
         await oracle.push_latest_block_header()
 
-        # Should start from latest block (1000) when no blocks stored
+        # Should start from latest block (1000) when no blocks stored (batch of 1)
         oracle.fetch_block_by_number.assert_called_once_with(1000)
-        mock_block_submitter.submit_block_header.assert_called_once_with(
-            1000,
-            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        mock_block_submitter.submit_block_headers_batch.assert_called_once_with(
+            [1000],
+            ["0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"],
         )
 
     @pytest.mark.asyncio
     async def test_push_latest_block_header_backfill(self):
         """Test backfilling blocks when oracle is behind."""
-        # Mock BlockSubmitter
+        # Mock BlockSubmitter with batch submission
         mock_block_submitter = MagicMock()
         mock_block_submitter.get_latest_block_number = AsyncMock(
             return_value=995
         )  # 5 blocks behind
-        mock_block_submitter.submit_block_header = AsyncMock(return_value=True)
+        mock_block_submitter.submit_block_headers_batch = AsyncMock(return_value=True)
 
         # Mock Web3 source chain
         mock_source_w3 = MagicMock()
@@ -189,15 +189,12 @@ class TestPushOracleMode:
 
         await oracle.push_latest_block_header()
 
-        # Should push blocks 996-1000 (5 blocks total)
+        # Should push blocks 996-1000 in a single batch (5 blocks total)
         assert oracle.fetch_block_by_number.call_count == 5
-        assert mock_block_submitter.submit_block_header.call_count == 5
-
-        for block_num in range(996, 1001):
-            oracle.fetch_block_by_number.assert_any_call(block_num)
-            mock_block_submitter.submit_block_header.assert_any_call(
-                block_num, f"0x{block_num:064x}"
-            )
+        mock_block_submitter.submit_block_headers_batch.assert_called_once_with(
+            [996, 997, 998, 999, 1000],
+            [f"0x{n:064x}" for n in range(996, 1001)]
+        )
 
     @pytest.mark.asyncio
     async def test_push_latest_block_header_up_to_date(self):
@@ -228,12 +225,12 @@ class TestPushOracleMode:
     @pytest.mark.asyncio
     async def test_push_latest_block_header_submission_failure(self):
         """Test handling of submission failures."""
-        # Mock BlockSubmitter
+        # Mock BlockSubmitter with batch submission that fails
         mock_block_submitter = MagicMock()
         mock_block_submitter.get_latest_block_number = AsyncMock(
             return_value=995
         )  # 5 blocks behind
-        mock_block_submitter.submit_block_header = AsyncMock(
+        mock_block_submitter.submit_block_headers_batch = AsyncMock(
             return_value=False
         )  # Fail
 
@@ -246,19 +243,18 @@ class TestPushOracleMode:
         oracle.block_submitter = mock_block_submitter
         oracle.source_w3 = mock_source_w3
 
-        # Mock fetch_block_by_number
-        mock_block_data = {
-            "hash": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-            "number": 996,
-        }
-        oracle.fetch_block_by_number = AsyncMock(return_value=mock_block_data)
+        # Mock fetch_block_by_number to return blocks
+        def mock_fetch_block(block_number):
+            return {"hash": f"0x{block_number:064x}", "number": block_number}
+
+        oracle.fetch_block_by_number = AsyncMock(side_effect=mock_fetch_block)
 
         await oracle.push_latest_block_header()
 
-        # Should attempt submission but fail
-        mock_block_submitter.submit_block_header.assert_called_once_with(
-            996,
-            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        # Should attempt batch submission but fail
+        mock_block_submitter.submit_block_headers_batch.assert_called_once_with(
+            [996, 997, 998, 999, 1000],
+            [f"0x{n:064x}" for n in range(996, 1001)]
         )
 
     @pytest.mark.asyncio
@@ -450,7 +446,7 @@ class TestPushOracleMode:
         oracle.block_submitter.get_latest_block_number = AsyncMock(
             return_value=995
         )
-        oracle.block_submitter.submit_block_header = AsyncMock(
+        oracle.block_submitter.submit_block_headers_batch = AsyncMock(
             return_value=True
         )
 
@@ -468,11 +464,11 @@ class TestPushOracleMode:
 
         await oracle.push_latest_block_header()
 
-        # Should convert bytes to hex string with 0x prefix (backfill pushes 996-1000)
-        assert oracle.block_submitter.submit_block_header.call_count == 5
-        for call in oracle.block_submitter.submit_block_header.call_args_list:
-            _, hash_arg = call[0]
-            assert (
-                hash_arg
-                == "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-            )
+        # Should convert bytes to hex string with 0x prefix (batch submission for 996-1000)
+        oracle.block_submitter.submit_block_headers_batch.assert_called_once()
+        call_args = oracle.block_submitter.submit_block_headers_batch.call_args
+        block_numbers, block_hashes = call_args[0]
+        assert block_numbers == [996, 997, 998, 999, 1000]
+        # All hashes should be converted to hex with 0x prefix
+        for hash_arg in block_hashes:
+            assert hash_arg == "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
