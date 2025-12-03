@@ -6,18 +6,18 @@ import {BlockHashAdapter} from "../BlockHashAdapter.sol";
 
 /**
  * @title ROFLAdapter
- * @notice Adapter for Oasis Sapphire ROFL (Runtime OFf-chain Logic) applications
+ * @notice Adapter for Oasis ROFL
  */
 contract ROFLAdapter is BlockHashAdapter {
     string public constant PROVIDER = "oasis";
 
     bytes21 public immutable roflAppID;
-    address public ROFL_ORACLE;
+    address public ROFL_REPORTER;
     uint256 public immutable SOURCE_CHAIN_ID;
 
     mapping(uint256 chainId => uint256 lastBlockNumber) public lastStoredBlock;
 
-    error UnauthorizedROFLOracle();
+    error UnauthorizedROFLReporter();
 
     constructor(bytes21 _roflAppID, uint256 _sourceChainId) {
         roflAppID = _roflAppID;
@@ -36,9 +36,9 @@ contract ROFLAdapter is BlockHashAdapter {
         uint256 blockNumber,
         bytes32 blockHash
     ) external {
-        // Verify that the caller is authorized oracle address
-        if (msg.sender != ROFL_ORACLE) {
-            revert UnauthorizedROFLOracle();
+        // Verify that the caller is authorized reporter address
+        if (msg.sender != ROFL_REPORTER) {
+            revert UnauthorizedROFLReporter();
         }
 
         lastStoredBlock[chainId] = blockNumber;
@@ -46,8 +46,36 @@ contract ROFLAdapter is BlockHashAdapter {
         _storeHash(chainId, blockNumber, blockHash);
     }
 
-    function setOracle(address oracle) external {
+    /**
+     * @notice Stores multiple block headers for a given chain
+     * @dev Only callable by the authorized ROFL application through Subcall authorization,
+     *      and assumes block numbers are in ascending order
+     * @param chainId The chain ID where the blocks exist
+     * @param blockNumbers The block numbers to store the hashes for
+     * @param blockHashes The block hashes to store
+     */
+    function storeBlockheaders(
+        uint256 chainId,
+        uint256[] calldata blockNumbers,
+        bytes32[] calldata blockHashes
+    ) external {
+        // Verify that the caller is authorized reporter address
+        if (msg.sender != ROFL_REPORTER) {
+            revert UnauthorizedROFLReporter();
+        }
+
+        uint256 len = blockNumbers.length;
+        require(len == blockHashes.length, "Mismatched input lengths");
+
+        if (lastStoredBlock[chainId] < blockNumbers[len - 1]) {
+            lastStoredBlock[chainId] = blockNumbers[len - 1];
+        }
+
+        _storeHashes(chainId, blockNumbers, blockHashes);
+    }
+
+    function setReporter(address reporter) external {
         Subcall.roflEnsureAuthorizedOrigin(roflAppID);
-        ROFL_ORACLE = oracle;
+        ROFL_REPORTER = reporter;
     }
 }

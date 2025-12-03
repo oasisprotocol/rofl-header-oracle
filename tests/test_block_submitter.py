@@ -113,15 +113,15 @@ class TestBlockSubmitter:
         assert submitter.contract_address == Web3.to_checksum_address(
             contract_address
         )
-        # Verify MockAdapter ABI was loaded
+        # Verify ROFLAdapter ABI was loaded (both modes use ROFLAdapter now)
         mock_contract_util.get_contract_abi.assert_called_once_with(
-            "MockAdapter"
+            "ROFLAdapter"
         )
 
     def test_abi_loading_based_on_mode(
         self, mock_contract_util, mock_rofl_util
     ):
-        """Test that correct ABI is loaded based on mode."""
+        """Test that ROFLAdapter ABI is loaded in both modes."""
         source_chain_id = 1
         contract_address = "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb7"
 
@@ -140,20 +140,20 @@ class TestBlockSubmitter:
         # Reset mock
         mock_contract_util.get_contract_abi.reset_mock()
 
-        # Test local mode loads MockAdapter
+        # Test local mode also loads ROFLAdapter (unified contract interface)
         BlockSubmitter(
             contract_util=mock_contract_util,
             rofl_util=None,
             source_chain_id=source_chain_id,
             contract_address=contract_address,
         )
-        mock_contract_util.get_contract_abi.assert_called_with("MockAdapter")
+        mock_contract_util.get_contract_abi.assert_called_with("ROFLAdapter")
 
     @pytest.mark.asyncio
     async def test_submit_block_header_rofl_success(
         self, mock_contract_util, mock_rofl_util, mock_contract
     ):
-        """Test successful block header submission via ROFL using oracle key."""
+        """Test successful block header submission via ROFL using reporter key."""
         source_chain_id = 1
         block_number = 12345
         block_hash = (
@@ -161,7 +161,7 @@ class TestBlockSubmitter:
         )
         tx_hash = b"\x12\x34\x56\x78"
 
-        # Setup mocks for transact (now using oracle key)
+        # Setup mocks for transact (now using reporter key)
         mock_transact = MagicMock()
         mock_transact.transact = MagicMock(return_value=tx_hash)
         mock_contract.functions.storeBlockHeader.return_value = mock_transact
@@ -194,7 +194,7 @@ class TestBlockSubmitter:
         mock_transact.transact.assert_called_once_with(
             {"gas": 300000, "gasPrice": Wei(1000000000)}
         )
-        # Should NOT call submit_tx since we're using oracle key
+        # Should NOT call submit_tx since we're using reporter key
         mock_rofl_util.submit_tx.assert_not_called()
 
     @pytest.mark.asyncio
@@ -235,73 +235,73 @@ class TestBlockSubmitter:
         result = await submitter.submit_block_header(block_number, block_hash)
 
         assert result is False
-        # Should NOT call submit_tx since we're using oracle key
+        # Should NOT call submit_tx since we're using reporter key
         mock_rofl_util.submit_tx.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_get_registered_oracle(
+    async def test_get_registered_reporter(
         self, mock_contract_util, mock_rofl_util, mock_contract
     ):
-        """Test getting the registered oracle address."""
-        oracle_address = "0x1234567890123456789012345678901234567890"
-        
-        # Setup mock for ROFL_ORACLE function call
-        mock_contract.functions.ROFL_ORACLE = MagicMock()
-        mock_contract.functions.ROFL_ORACLE().call = MagicMock(
-            return_value=oracle_address
+        """Test getting the registered reporter address."""
+        reporter_address = "0x1234567890123456789012345678901234567890"
+
+        # Setup mock for ROFL_REPORTER function call
+        mock_contract.functions.ROFL_REPORTER = MagicMock()
+        mock_contract.functions.ROFL_REPORTER().call = MagicMock(
+            return_value=reporter_address
         )
-        
+
         mock_contract_util.get_contract_abi = MagicMock(return_value=[])
         mock_contract_util.w3.eth.contract = MagicMock(
             return_value=mock_contract
         )
-        
+
         submitter = BlockSubmitter(
             contract_util=mock_contract_util,
             rofl_util=mock_rofl_util,
             source_chain_id=1,
             contract_address="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb7",
         )
-        
-        result = await submitter.get_registered_oracle()
-        assert result == oracle_address
-        
+
+        result = await submitter.get_registered_reporter()
+        assert result == reporter_address
+
     @pytest.mark.asyncio
-    async def test_get_registered_oracle_none(
+    async def test_get_registered_reporter_none(
         self, mock_contract_util, mock_rofl_util, mock_contract
     ):
-        """Test getting registered oracle when none is set."""
-        # Zero address means no oracle registered
-        mock_contract.functions.ROFL_ORACLE = MagicMock()
-        mock_contract.functions.ROFL_ORACLE().call = MagicMock(
+        """Test getting registered reporter when none is set."""
+        # Zero address means no reporter registered
+        mock_contract.functions.ROFL_REPORTER = MagicMock()
+        mock_contract.functions.ROFL_REPORTER().call = MagicMock(
             return_value="0x0000000000000000000000000000000000000000"
         )
-        
+
         mock_contract_util.get_contract_abi = MagicMock(return_value=[])
         mock_contract_util.w3.eth.contract = MagicMock(
             return_value=mock_contract
         )
-        
+
         submitter = BlockSubmitter(
             contract_util=mock_contract_util,
             rofl_util=mock_rofl_util,
             source_chain_id=1,
             contract_address="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb7",
         )
-        
-        result = await submitter.get_registered_oracle()
+
+        result = await submitter.get_registered_reporter()
         assert result is None
-        
+
     @pytest.mark.asyncio
-    async def test_register_oracle_success(
+    async def test_register_reporter_success(
         self, mock_contract_util, mock_rofl_util, mock_contract
     ):
-        """Test successful oracle registration."""
-        oracle_address = "0x1234567890123456789012345678901234567890"
-        
+        """Test successful reporter registration."""
+        reporter_address = "0x1234567890123456789012345678901234567890"
+
         # Setup mocks
-        mock_contract_util.w3.eth.default_account = oracle_address
-        
+        mock_contract_util.w3.eth.default_account = reporter_address
+
         mock_build_tx = MagicMock()
         mock_build_tx.build_transaction = MagicMock(
             return_value={
@@ -312,47 +312,93 @@ class TestBlockSubmitter:
                 "value": Wei(0),
             }
         )
-        mock_contract.functions.setOracle.return_value = mock_build_tx
-        
+        mock_contract.functions.setReporter.return_value = mock_build_tx
+
         mock_contract_util.get_contract_abi = MagicMock(return_value=[])
         mock_contract_util.w3.eth.contract = MagicMock(
             return_value=mock_contract
         )
-        
+
         submitter = BlockSubmitter(
             contract_util=mock_contract_util,
             rofl_util=mock_rofl_util,
             source_chain_id=1,
             contract_address="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb7",
         )
-        
-        result = await submitter.register_oracle()
-        
-        assert result is True
-        mock_contract.functions.setOracle.assert_called_once_with(oracle_address)
+
+        # Should complete without raising an exception
+        await submitter.register_reporter()
+
+        mock_contract.functions.setReporter.assert_called_once_with(
+            reporter_address
+        )
         mock_rofl_util.submit_tx.assert_called_once()
-        
+
     @pytest.mark.asyncio
-    async def test_register_oracle_local_mode(
+    async def test_register_reporter_local_mode(
         self, mock_contract_util, mock_contract
     ):
-        """Test that oracle registration is skipped in local mode."""
+        """Test that reporter registration is skipped in local mode."""
         mock_contract_util.get_contract_abi = MagicMock(return_value=[])
         mock_contract_util.w3.eth.contract = MagicMock(
             return_value=mock_contract
         )
-        
+
         submitter = BlockSubmitter(
             contract_util=mock_contract_util,
             rofl_util=None,  # Local mode
             source_chain_id=1,
             contract_address="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb7",
         )
-        
-        result = await submitter.register_oracle()
-        
-        assert result is True  # Should return True but do nothing
-        mock_contract.functions.setOracle.assert_not_called()
+
+        # Should complete without raising an exception (no-op in local mode)
+        await submitter.register_reporter()
+
+        mock_contract.functions.setReporter.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_register_reporter_failure(
+        self, mock_contract_util, mock_rofl_util, mock_contract
+    ):
+        """Test that registration failure raises an exception with details."""
+        reporter_address = "0x1234567890123456789012345678901234567890"
+
+        mock_contract_util.w3.eth.default_account = reporter_address
+
+        mock_build_tx = MagicMock()
+        mock_build_tx.build_transaction = MagicMock(
+            return_value={
+                "to": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb7",
+                "data": "0xabcdef",
+                "gas": 100000,
+                "gasPrice": Wei(1000000000),
+                "value": Wei(0),
+            }
+        )
+        mock_contract.functions.setReporter.return_value = mock_build_tx
+
+        mock_contract_util.get_contract_abi = MagicMock(return_value=[])
+        mock_contract_util.w3.eth.contract = MagicMock(
+            return_value=mock_contract
+        )
+
+        # Simulate ROFL failure
+        mock_rofl_util.submit_tx = AsyncMock(
+            side_effect=Exception(
+                "ROFL transaction failed: execution failed: invalid code"
+            )
+        )
+
+        submitter = BlockSubmitter(
+            contract_util=mock_contract_util,
+            rofl_util=mock_rofl_util,
+            source_chain_id=1,
+            contract_address="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb7",
+        )
+
+        # Should raise the original exception with the actual error message
+        with pytest.raises(Exception, match="execution failed: invalid code"):
+            await submitter.register_reporter()
 
     @pytest.mark.asyncio
     async def test_submit_block_header_local_success(
@@ -366,10 +412,10 @@ class TestBlockSubmitter:
         )
         tx_hash = b"\x12\x34\x56\x78"
 
-        # Setup mocks for MockAdapter
+        # Setup mocks for ROFLAdapter's storeBlockHeader (same as ROFL mode)
         mock_transact = MagicMock()
         mock_transact.transact = MagicMock(return_value=tx_hash)
-        mock_contract.functions.setHashes.return_value = mock_transact
+        mock_contract.functions.storeBlockHeader.return_value = mock_transact
 
         # Mock successful receipt
         mock_contract_util.w3.eth.wait_for_transaction_receipt.return_value = {
@@ -392,11 +438,9 @@ class TestBlockSubmitter:
         result = await submitter.submit_block_header(block_number, block_hash)
 
         assert result is True
-        # MockAdapter uses setHashes with arrays. We pass a list of hex strings.
-        mock_contract.functions.setHashes.assert_called_once_with(
-            source_chain_id,  # domain
-            [block_number],  # ids array
-            [block_hash],  # hashes array (as list of hex strings)
+        # Local mode now uses ROFLAdapter's storeBlockHeader (unified interface)
+        mock_contract.functions.storeBlockHeader.assert_called_once_with(
+            source_chain_id, block_number, block_hash
         )
         mock_transact.transact.assert_called_once_with(
             {"gas": 300000, "gasPrice": Wei(1000000000)}

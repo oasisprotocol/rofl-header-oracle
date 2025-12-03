@@ -5,11 +5,9 @@ This module tests the ROFL interaction utilities including
 socket communication, CBOR decoding, and transaction submission.
 """
 
-import codecs
 import unittest
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
-import cbor2
 import httpx
 import pytest
 from web3.types import TxParams
@@ -137,27 +135,16 @@ class TestRoflUtility(unittest.IsolatedAsyncioTestCase):
         )
         assert result == "test_key_value"
 
-    def test_decode_cbor_response_success(self):
-        """Test successful CBOR response decoding."""
-        test_data = {"status": "ok", "value": 123}
-        cbor_bytes = cbor2.dumps(test_data)
-        hex_string = codecs.encode(cbor_bytes, "hex").decode()
+    def test_decode_cbor_response_non_dict_wraps_in_data(self):
+        """Test that non-dict CBOR results get wrapped in {"data": ...}."""
+        # CBOR encoding of string "hello" (pre-computed, stable format)
+        # 0x65 = text string of length 5, followed by "hello" bytes
+        cbor_hello_hex = "6568656c6c6f"
 
         utility = RoflUtility()
-        result = utility._decode_cbor_response(hex_string)
+        result = utility._decode_cbor_response(cbor_hello_hex)
 
-        assert result == test_data
-
-    def test_decode_cbor_response_non_dict(self):
-        """Test CBOR decoding with non-dict result."""
-        test_data = "simple_string"
-        cbor_bytes = cbor2.dumps(test_data)
-        hex_string = codecs.encode(cbor_bytes, "hex").decode()
-
-        utility = RoflUtility()
-        result = utility._decode_cbor_response(hex_string)
-
-        assert result == {"data": test_data}
+        assert result == {"data": "hello"}
 
     def test_decode_cbor_response_invalid_hex(self):
         """Test CBOR decoding with invalid hex string."""
@@ -182,79 +169,121 @@ class TestRoflUtility(unittest.IsolatedAsyncioTestCase):
 
     @patch.object(RoflUtility, "_appd_post")
     @patch.object(RoflUtility, "_decode_cbor_response")
-    async def test_submit_tx_success(self, mock_decode, mock_appd_post):
-        """Test successful transaction submission."""
-        mock_appd_post.return_value = {"data": "cbor_response_hex"}
+    async def test_submit_tx_payload_construction(
+        self, mock_decode, mock_appd_post
+    ):
+        """Test payload construction: hex stripping, value→string, gas→int."""
+        mock_appd_post.return_value = {"data": "unused"}
         mock_decode.return_value = {"ok": True}
 
         utility = RoflUtility()
-        result = await utility.submit_tx(self.test_tx)
-
-        expected_payload = {
-            "tx": {
-                "kind": "eth",
-                "data": {
-                    "gas_limit": 100000,
-                    "to": "1234567890123456789012345678901234567890",
-                    "value": 0,
-                    "data": "abcdef",
-                },
-            },
-            "encrypt": False,
+        tx: TxParams = {
+            "gas": 150000,
+            "to": "0xABCDEF1234567890ABCDEF1234567890ABCDEF12",
+            "value": 1000000000000000000,  # 1 ETH in Wei
+            "data": "0x12345678",
         }
+        await utility.submit_tx(tx)
 
-        mock_appd_post.assert_called_once_with(
-            "/rofl/v1/tx/sign-submit", expected_payload
-        )
-        mock_decode.assert_called_once_with("cbor_response_hex")
+        payload = mock_appd_post.call_args[0][1]
+        tx_data = payload["tx"]["data"]
+
+        # gas converted to int
+        assert tx_data["gas_limit"] == 150000
+        assert isinstance(tx_data["gas_limit"], int)
+
+        # value converted to string (for large Wei values)
+        assert tx_data["value"] == "1000000000000000000"
+        assert isinstance(tx_data["value"], str)
+
+        # 0x prefix stripped, lowercase preserved
+        assert tx_data["to"] == "ABCDEF1234567890ABCDEF1234567890ABCDEF12"
+        assert tx_data["data"] == "12345678"
+
+    @patch.object(RoflUtility, "_appd_post")
+    @patch.object(RoflUtility, "_decode_cbor_response")
+    async def test_submit_tx_handles_bytes_input(
+        self, mock_decode, mock_appd_post
+    ):
+        """Test payload handles bytes input for to/data fields."""
+        mock_appd_post.return_value = {"data": "unused"}
+        mock_decode.return_value = {"ok": True}
+
+        utility = RoflUtility()
+        tx: TxParams = {
+            "gas": 100000,
+            "to": bytes.fromhex("1234567890123456789012345678901234567890"),
+            "value": 0,
+            "data": bytes.fromhex("abcdef"),
+        }
+        await utility.submit_tx(tx)
+
+        payload = mock_appd_post.call_args[0][1]
+        tx_data = payload["tx"]["data"]
+
+        assert tx_data["to"] == "1234567890123456789012345678901234567890"
+        assert tx_data["data"] == "abcdef"
+
+    @patch.object(RoflUtility, "_appd_post")
+    @patch.object(RoflUtility, "_decode_cbor_response")
+    async def test_submit_tx_ok_returns_true(self, mock_decode, mock_appd_post):
+        """Test that ok response returns True."""
+        mock_appd_post.return_value = {"data": "unused"}
+        mock_decode.return_value = {"ok": "tx_hash"}
+
+        utility = RoflUtility()
+        result = await utility.submit_tx(self.test_tx)
         assert result is True
 
     @patch.object(RoflUtility, "_appd_post")
     @patch.object(RoflUtility, "_decode_cbor_response")
-    async def test_submit_tx_error_response(self, mock_decode, mock_appd_post):
-        """Test transaction submission with error response."""
-        mock_appd_post.return_value = {"data": "cbor_response_hex"}
-        mock_decode.return_value = {"error": "Transaction failed"}
+    async def test_submit_tx_fail_raises_with_message(
+        self, mock_decode, mock_appd_post
+    ):
+        """Test that fail response raises exception with message field."""
+        mock_appd_post.return_value = {"data": "unused"}
+        mock_decode.return_value = {"fail": {"message": "out of gas"}}
 
         utility = RoflUtility()
-
-        with pytest.raises(
-            Exception, match="ROFL transaction failed: Transaction failed"
-        ):
+        with pytest.raises(Exception, match="out of gas"):
             await utility.submit_tx(self.test_tx)
 
     @patch.object(RoflUtility, "_appd_post")
     @patch.object(RoflUtility, "_decode_cbor_response")
-    async def test_submit_tx_unknown_response(
+    async def test_submit_tx_fail_without_message_uses_str(
         self, mock_decode, mock_appd_post
     ):
-        """Test transaction submission with unknown response format."""
-        mock_appd_post.return_value = {"data": "cbor_response_hex"}
-        mock_decode.return_value = {"unknown_field": "value"}
+        """Test that fail response without message field stringifies the dict."""
+        mock_appd_post.return_value = {"data": "unused"}
+        mock_decode.return_value = {"fail": {"code": 42}}
 
         utility = RoflUtility()
-        result = await utility.submit_tx(self.test_tx)
-
-        # Should assume success if no clear error
-        assert result is True
+        with pytest.raises(Exception, match="code.*42"):
+            await utility.submit_tx(self.test_tx)
 
     @patch.object(RoflUtility, "_appd_post")
-    async def test_submit_tx_removes_0x_prefix(self, mock_appd_post):
-        """Test that submit_tx removes 0x prefix from hex values."""
-        mock_appd_post.return_value = {
-            "data": "a163026b01f4"
-        }  # CBOR for {"ok": True}
+    @patch.object(RoflUtility, "_decode_cbor_response")
+    async def test_submit_tx_error_raises(self, mock_decode, mock_appd_post):
+        """Test that error response raises exception."""
+        mock_appd_post.return_value = {"data": "unused"}
+        mock_decode.return_value = {"error": "network timeout"}
 
         utility = RoflUtility()
-        await utility.submit_tx(self.test_tx)
+        with pytest.raises(Exception, match="network timeout"):
+            await utility.submit_tx(self.test_tx)
 
-        # Check that 0x was removed from 'to' and 'data' fields
-        call_args = mock_appd_post.call_args[0][1]
-        assert (
-            call_args["tx"]["data"]["to"]
-            == "1234567890123456789012345678901234567890"
-        )
-        assert call_args["tx"]["data"]["data"] == "abcdef"
+    @patch.object(RoflUtility, "_appd_post")
+    @patch.object(RoflUtility, "_decode_cbor_response")
+    async def test_submit_tx_unknown_format_raises(
+        self, mock_decode, mock_appd_post
+    ):
+        """Test that unknown response format raises (fail-closed)."""
+        mock_appd_post.return_value = {"data": "unused"}
+        mock_decode.return_value = {"unexpected": "format"}
+
+        utility = RoflUtility()
+        with pytest.raises(Exception, match="Unknown ROFL response format"):
+            await utility.submit_tx(self.test_tx)
 
     @patch("rofl_oracle.utils.rofl_utility.httpx.AsyncClient")
     async def test_timeout_configuration(self, mock_client_class):

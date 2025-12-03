@@ -104,6 +104,20 @@ class RoflUtility:
             logger.error(f"CBOR decode error: {decode_error}")
             return {"error": "decode_failed", "raw": response_hex}
 
+    def _to_hex_str(self, value: bytes | str) -> str:
+        """Convert bytes or hex string to hex string without 0x prefix.
+
+        Args:
+            value: Bytes, HexBytes, or hex string (with or without 0x prefix)
+
+        Returns:
+            Hex string without 0x prefix
+        """
+        if isinstance(value, bytes | bytearray):
+            return value.hex()
+        # It's a string - remove 0x prefix if present
+        return str(value).removeprefix("0x").removeprefix("0X")
+
     async def submit_tx(self, tx: TxParams) -> bool:
         """
         Submit a transaction via ROFL.
@@ -117,18 +131,30 @@ class RoflUtility:
         Raises:
             Exception: If ROFL returns an error
         """
+        # Convert to/data to hex strings without 0x prefix
+        to_hex = self._to_hex_str(tx["to"])
+        data_hex = self._to_hex_str(tx["data"])
+
+        # gas_limit must be an integer
+        gas_limit = int(tx["gas"])
+
+        # value must be an string for container 0.8.5+ (Wei)
+        value = str(int(tx["value"]))
+
         payload: dict[str, Any] = {
             "tx": {
                 "kind": "eth",
                 "data": {
-                    "gas_limit": tx["gas"],
-                    "to": tx["to"].removeprefix("0x"),
-                    "value": tx["value"],
-                    "data": tx["data"].removeprefix("0x"),
+                    "gas_limit": gas_limit,
+                    "to": to_hex,
+                    "value": value,
+                    "data": data_hex,
                 },
             },
             "encrypt": False,
         }
+        # Log the payload for debugging
+        logger.debug(f"ROFL submit_tx payload: {json.dumps(payload)}")
 
         path: str = "/rofl/v1/tx/sign-submit"
         response: dict[str, Any] = await self._appd_post(path, payload)
@@ -144,6 +170,10 @@ class RoflUtility:
             case {"ok": _}:
                 logger.info("Transaction submitted successfully to ROFL")
                 return True
+            case {"fail": fail_info}:
+                error_msg = fail_info.get("message", str(fail_info))
+                logger.error(f"ROFL transaction failed: {error_msg}")
+                raise Exception(f"ROFL transaction failed: {error_msg}")
             case {"error": error_msg}:
                 logger.error(f"ROFL transaction failed: {error_msg}")
                 raise Exception(f"ROFL transaction failed: {error_msg}")
@@ -151,5 +181,7 @@ class RoflUtility:
                 logger.warning(
                     f"Unknown ROFL response format: {decoded_response}"
                 )
-                # If no clear error, assume success
-                return True
+                # Unknown format - fail closed for safety
+                raise Exception(
+                    f"Unknown ROFL response format: {decoded_response}"
+                )

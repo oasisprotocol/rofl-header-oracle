@@ -7,21 +7,41 @@ services:
     platform: linux/amd64
     container_name: rofl_header_oracle
     entrypoint: /bin/sh -c 'uv run python -m rofl_oracle --local --log-level DEBUG'
+    ports:
+      - "8080:8080"  # Health check endpoint
     environment:
       # Python configuration
       PYTHONUNBUFFERED: 1  # Disable output buffering for immediate log visibility
-      
-      # Source chain configuration
+
+      # Common configuration (all modes)
       SOURCE_RPC_URL: ${SOURCE_RPC_URL:-https://ethereum.publicnode.com}
-      SOURCE_CONTRACT_ADDRESS: ${SOURCE_CONTRACT_ADDRESS:-}  # Required - BlockHeaderRequester contract address
-      
-      # Target chain configuration
       TARGET_RPC_URL: ${TARGET_RPC_URL:-https://testnet.sapphire.oasis.io}
-      CONTRACT_ADDRESS: ${CONTRACT_ADDRESS:-}  # Required - ROFLAdapter contract address
-      
-      # Oracle configuration
+      ROFL_ADAPTER_ADDRESS: ${ROFL_ADAPTER_ADDRESS:-}  # Required - ROFLAdapter contract address
+      REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-30}  # HTTP request timeout in seconds
+      RETRY_COUNT: ${RETRY_COUNT:-3}  # Number of retry attempts
+
+      # Oracle mode: event_listener, push, or watcher
+      ORACLE_MODE: ${ORACLE_MODE:-event_listener}
+
+      # Logging configuration
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}  # DEBUG mode for local testing
+      JSON_LOGS: ${JSON_LOGS:-false}  # Enable JSON-formatted structured logging
+
+      # Event Listener Mode Configuration (ORACLE_MODE=event_listener)
+      SOURCE_CONTRACT_ADDRESS: ${SOURCE_CONTRACT_ADDRESS:-}  # Required for event_listener mode
       POLLING_INTERVAL: ${POLLING_INTERVAL:-12}  # Seconds between event checks
-      
+      LOOKBACK_BLOCKS: ${LOOKBACK_BLOCKS:-100}  # Blocks to look back on startup
+
+      # Push Mode Configuration (ORACLE_MODE=push)
+      PUSH_INTERVAL: ${PUSH_INTERVAL:-60}  # Seconds between block pushes
+      PUSH_BATCH_SIZE: ${PUSH_BATCH_SIZE:-20}  # Max blocks to push per iteration
+
+      # Watcher Mode Configuration (ORACLE_MODE=watcher)
+      WATCH_ADDRESSES: ${WATCH_ADDRESSES:-}  # Required for watcher mode - comma-separated addresses
+      SCAN_INTERVAL: ${SCAN_INTERVAL:-60}  # Seconds between scanning for interactions
+      WATCHER_BATCH_SIZE: ${WATCHER_BATCH_SIZE:-50}  # Max blocks to scan per iteration
+      ENABLE_INTERNAL_TX_DETECTION: ${ENABLE_INTERNAL_TX_DETECTION:-false}  # Requires archive node with debug API
+
       # Local mode configuration (for testing without ROFL)
       LOCAL_PRIVATE_KEY: ${LOCAL_PRIVATE_KEY:-}  # Required in local mode - private key for testing
     

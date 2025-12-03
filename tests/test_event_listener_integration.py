@@ -202,19 +202,20 @@ class TestEventListenerIntegration:
                     await listen_task
             await event_listener.stop()
 
-    @pytest.mark.skip(reason="Integration test requiring real WebSocket connection - should be run separately")
-    @pytest.mark.slow
+    @pytest.mark.skip(
+        reason="Integration test requiring real WebSocket connection - should be run separately"
+    )
     @pytest.mark.asyncio
     async def test_event_subscription_with_timeout(
         self, source_rpc_url, source_contract
     ):
         """Test event subscription - waits for a real event within 30 seconds or fails.
-        
+
         This is an integration test that requires:
         - Active WebSocket connection to Sepolia
         - Real contract interactions happening on-chain
         - Network connectivity
-        
+
         Should be run separately as an integration test, not as part of unit tests.
         """
         # Create event listener - it will handle HTTP to WebSocket conversion automatically

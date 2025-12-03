@@ -9,6 +9,7 @@ with sensible defaults where appropriate.
 import logging
 import os
 from dataclasses import dataclass
+from enum import Enum
 from urllib.parse import urlparse
 
 from web3 import Web3
@@ -16,31 +17,53 @@ from web3 import Web3
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True, slots=True)
-class SourceChainConfig:
-    """Configuration for the source blockchain.
+class OracleMode(Enum):
+    """Oracle operating modes."""
 
-    Attributes:
-        rpc_url: HTTP(S) RPC endpoint for the source chain
-        contract_address: Checksummed address of BlockHeaderRequester contract (None for push oracle mode)
-        chain_id: Chain ID (fetched from RPC, not configured)
+    EVENT_LISTENER = "event_listener"  # Listen for BlockHeaderRequested events
+    PUSH = "push"  # Push latest block headers periodically
+    WATCHER = "watcher"  # Watch specific addresses for interactions
+
+
+@dataclass(frozen=True, slots=True)
+class EventListenerModeConfig:
+    """Configuration specific to event listener mode.
+
+    This mode listens for BlockHeaderRequested events from a source chain contract
+    and submits the requested block headers to the target chain.
+
+    :cvar polling_interval: Seconds between event polling checks (env: POLLING_INTERVAL)
+    :cvar lookback_blocks: Number of blocks to look back on startup (env: LOOKBACK_BLOCKS)
+    :cvar contract_address: Address of BlockHeaderRequester contract (env: SOURCE_CONTRACT_ADDRESS)
     """
 
-    rpc_url: str
-    contract_address: str | None = None  # None for push oracle mode
-    chain_id: int | None = None  # Set after connecting to RPC
+    polling_interval: int
+    lookback_blocks: int
+    contract_address: str
 
     def __post_init__(self) -> None:
-        """Validate source chain configuration."""
-        # Validate RPC URL
-        if not self.rpc_url:
-            raise ValueError("Source RPC URL is required (SOURCE_RPC_URL)")
-
-        parsed = urlparse(self.rpc_url)
-        if parsed.scheme not in ("http", "https", "ws", "wss"):
+        """Validate event listener configuration."""
+        if self.polling_interval <= 0:
             raise ValueError(
-                f"Invalid RPC URL scheme: {parsed.scheme}. "
-                "Expected http, https, ws, or wss"
+                f"Polling interval must be positive, got {self.polling_interval}"
+            )
+        if self.polling_interval > 300:
+            raise ValueError(
+                f"Polling interval too long (max 300s), got {self.polling_interval}"
+            )
+
+        if self.lookback_blocks <= 0:
+            raise ValueError(
+                f"Lookback blocks must be positive, got {self.lookback_blocks}"
+            )
+        if self.lookback_blocks > 1000:
+            raise ValueError(
+                f"Lookback blocks too high (max 1000), got {self.lookback_blocks}"
+            )
+
+        if self.contract_address == "":
+            raise ValueError(
+                "Contract address for event listener mode cannot be empty"
             )
 
         # Validate and checksum contract address (only if provided)
@@ -48,7 +71,7 @@ class SourceChainConfig:
             if not self.contract_address:
                 raise ValueError(
                     "Source contract address cannot be empty string (SOURCE_CONTRACT_ADDRESS). "
-                    "Use None for push oracle mode."
+                    "Use None for push oracle or watcher mode."
                 )
 
             if not Web3.is_address(self.contract_address):
@@ -62,107 +85,23 @@ class SourceChainConfig:
                 # Use object.__setattr__ since dataclass is frozen
                 object.__setattr__(self, "contract_address", checksummed)
 
-    @property
-    def is_push_oracle(self) -> bool:
-        """Return True if configured as a push oracle (no source contract)."""
-        return self.contract_address is None
-
 
 @dataclass(frozen=True, slots=True)
-class TargetChainConfig:
-    """Configuration for the target Sapphire chain.
+class PushModeConfig:
+    """Configuration specific to push oracle mode.
 
-    Attributes:
-        rpc_url: HTTP(S) RPC endpoint for the target chain
-        contract_address: Checksummed address of ROFLAdapter contract
+    This mode continuously pushes the latest block headers from the source chain
+    to the target chain without requiring explicit requests.
+
+    :cvar push_interval: Seconds between block pushes (env: PUSH_INTERVAL)
+    :cvar batch_size: Maximum blocks to push per iteration (env: PUSH_BATCH_SIZE)
     """
 
-    rpc_url: str
-    contract_address: str
+    push_interval: int
+    batch_size: int = 20
 
     def __post_init__(self) -> None:
-        """Validate target chain configuration."""
-        # Validate RPC URL
-        if not self.rpc_url:
-            raise ValueError("Target RPC URL is required (TARGET_RPC_URL)")
-
-        parsed = urlparse(self.rpc_url)
-        if parsed.scheme not in ("http", "https", "ws", "wss"):
-            raise ValueError(
-                f"Invalid RPC URL scheme: {parsed.scheme}. "
-                "Must be http, https, ws, or wss"
-            )
-
-        # Validate and checksum contract address
-        if not self.contract_address:
-            raise ValueError(
-                "Target contract address is required (CONTRACT_ADDRESS)"
-            )
-
-        if not Web3.is_address(self.contract_address):
-            raise ValueError(
-                f"Invalid target contract address: {self.contract_address}"
-            )
-
-        # Convert to checksum address
-        checksummed = Web3.to_checksum_address(self.contract_address)
-        if checksummed != self.contract_address:
-            object.__setattr__(self, "contract_address", checksummed)
-
-
-@dataclass(frozen=True, slots=True)
-class MonitoringConfig:
-    """Configuration for event monitoring and processing."""
-
-    polling_interval: int  # seconds between event polls
-    lookback_blocks: int  # blocks to look back on startup
-    request_timeout: int  # HTTP request timeout in seconds
-    retry_count: int  # retry attempts for operations
-    push_interval: int = 60  # seconds between block pushes in push oracle mode
-
-    def __post_init__(self) -> None:
-        """Validate monitoring configuration."""
-        # Validate polling interval
-        if self.polling_interval <= 0:
-            raise ValueError(
-                f"Polling interval must be positive, got {self.polling_interval}"
-            )
-        if self.polling_interval > 300:
-            raise ValueError(
-                f"Polling interval too long (max 300s), got {self.polling_interval}"
-            )
-
-        # Validate lookback blocks
-        if self.lookback_blocks <= 0:
-            raise ValueError(
-                f"Lookback blocks must be positive, got {self.lookback_blocks}"
-            )
-        if self.lookback_blocks > 1000:
-            raise ValueError(
-                f"Lookback blocks too high (max 1000), got {self.lookback_blocks}"
-            )
-
-        # Validate request timeout
-        if self.request_timeout <= 0:
-            raise ValueError(
-                f"Request timeout must be positive, got {self.request_timeout}"
-            )
-        if self.request_timeout > 120:
-            raise ValueError(
-                f"Request timeout too long (max 120s), got {self.request_timeout}"
-            )
-
-        # Validate retry count
-        if self.retry_count < 0:
-            raise ValueError(
-                f"Retry count must be non-negative, got {self.retry_count}"
-            )
-        if self.retry_count > 10:
-            raise ValueError(
-                f"Retry count too high (max 10), got {self.retry_count}"
-            )
-
-        # Validate push interval
+        """Validate push oracle configuration."""
         if self.push_interval <= 0:
             raise ValueError(
                 f"Push interval must be positive, got {self.push_interval}"
@@ -172,22 +111,186 @@ class MonitoringConfig:
                 f"Push interval too long (max 300s), got {self.push_interval}"
             )
 
+        if self.batch_size <= 0:
+            raise ValueError(
+                f"Batch size must be positive, got {self.batch_size}"
+            )
+        if self.batch_size > 100:
+            raise ValueError(
+                f"Batch size too high (max 100), got {self.batch_size}"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class WatcherModeConfig:
+    """Configuration specific to watcher mode.
+
+    This mode watches specific addresses for interactions and pushes block headers
+    only when those addresses have on-chain activity.
+
+    :cvar watch_addresses: List of addresses to monitor (env: WATCH_ADDRESSES, comma-separated)
+    :cvar scan_interval: Seconds between scanning for interactions (env: SCAN_INTERVAL)
+    :cvar batch_size: Maximum blocks to scan per iteration (env: WATCHER_BATCH_SIZE)
+    :cvar lookback_blocks: Number of blocks to look back on startup (env: LOOKBACK_BLOCKS)
+    :cvar enable_internal_tx_detection: Enable internal transaction detection (env: ENABLE_INTERNAL_TX_DETECTION)
+    """
+
+    watch_addresses: list[str]
+    scan_interval: int
+    batch_size: int = 50
+    lookback_blocks: int = 100
+    enable_internal_tx_detection: bool = False
+
+    def __post_init__(self) -> None:
+        """Validate watcher configuration."""
+        if self.scan_interval <= 0:
+            raise ValueError(
+                f"Scan interval must be positive, got {self.scan_interval}"
+            )
+        if self.scan_interval > 300:
+            raise ValueError(
+                f"Scan interval too long (max 300s), got {self.scan_interval}"
+            )
+
+        if self.batch_size <= 0:
+            raise ValueError(
+                f"Batch size must be positive, got {self.batch_size}"
+            )
+        if self.batch_size > 200:
+            raise ValueError(
+                f"Batch size too high (max 200), got {self.batch_size}"
+            )
+
+        if self.lookback_blocks <= 0:
+            raise ValueError(
+                f"Lookback blocks must be positive, got {self.lookback_blocks}"
+            )
+        if self.lookback_blocks > 1000:
+            raise ValueError(
+                f"Lookback blocks too high (max 1000), got {self.lookback_blocks}"
+            )
+
+        if self.watch_addresses is None or len(self.watch_addresses) == 0:
+            raise ValueError("Watcher mode requires at least one watch address")
+
+        # Validate watch addresses if provided
+        if self.watch_addresses is not None:
+            if not isinstance(self.watch_addresses, list):
+                raise ValueError("Watch addresses must be a list")
+
+            if len(self.watch_addresses) == 0:
+                raise ValueError("Watch addresses list cannot be empty")
+
+            # Checksum all watch addresses
+            checksummed_addresses = []
+            for addr in self.watch_addresses:
+                if not Web3.is_address(addr):
+                    raise ValueError(f"Invalid watch address: {addr}")
+                checksummed_addresses.append(Web3.to_checksum_address(addr))
+
+            object.__setattr__(self, "watch_addresses", checksummed_addresses)
+
+
+@dataclass(frozen=True, slots=True)
+class CommonConfig:
+    """Configuration common to all oracle modes.
+
+    These settings apply regardless of which operating mode the oracle is in.
+
+    :cvar source_rpc_url: HTTP(S) RPC endpoint for the source chain (env: SOURCE_RPC_URL)
+    :cvar source_chain_id: Chain ID for the source chain (auto-detected from RPC)
+    :cvar target_rpc_url: HTTP(S) RPC endpoint for the target chain (env: TARGET_RPC_URL)
+    :cvar request_timeout: HTTP request timeout in seconds (env: REQUEST_TIMEOUT)
+    :cvar retry_count: Number of retry attempts for operations (env: RETRY_COUNT)
+    :cvar target_contract_address: Address of ROFLAdapter on target chain (env: ROFL_ADAPTER_ADDRESS)
+    """
+
+    source_rpc_url: str
+    source_chain_id: int
+    target_rpc_url: str
+    request_timeout: int
+    retry_count: int
+    target_contract_address: str
+
+    def __post_init__(self) -> None:
+        """Validate common configuration."""
+        if self.request_timeout <= 0:
+            raise ValueError(
+                f"Request timeout must be positive, got {self.request_timeout}"
+            )
+        if self.request_timeout > 120:
+            raise ValueError(
+                f"Request timeout too long (max 120s), got {self.request_timeout}"
+            )
+
+        if self.retry_count < 0:
+            raise ValueError(
+                f"Retry count must be non-negative, got {self.retry_count}"
+            )
+        if self.retry_count > 10:
+            raise ValueError(
+                f"Retry count too high (max 10), got {self.retry_count}"
+            )
+
+        if not self.source_rpc_url:
+            raise ValueError("Source RPC URL is required (SOURCE_RPC_URL)")
+
+        # Validate RPC URL
+        if not self.source_rpc_url:
+            raise ValueError("Source RPC URL is required (SOURCE_RPC_URL)")
+
+        parsed = urlparse(self.source_rpc_url)
+        if parsed.scheme not in ("http", "https", "ws", "wss"):
+            raise ValueError(
+                f"Invalid RPC URL scheme: {parsed.scheme}. "
+                "Expected http, https, ws, or wss"
+            )
+
+        if not self.target_rpc_url:
+            raise ValueError("Target RPC URL is required (TARGET_RPC_URL)")
+
+            # Validate RPC URL
+        if not self.target_rpc_url:
+            raise ValueError("Target RPC URL is required (TARGET_RPC_URL)")
+
+        parsed = urlparse(self.target_rpc_url)
+        if parsed.scheme not in ("http", "https", "ws", "wss"):
+            raise ValueError(
+                f"Invalid RPC URL scheme: {parsed.scheme}. "
+                "Must be http, https, ws, or wss"
+            )
+
+        # Validate and checksum contract address
+        if not self.target_contract_address:
+            raise ValueError(
+                "Target contract address is required (ROFL_ADAPTER_ADDRESS)"
+            )
+
+        if not Web3.is_address(self.target_contract_address):
+            raise ValueError(
+                f"Invalid target contract address: {self.target_contract_address}"
+            )
+
+        # Convert to checksum address
+        checksummed = Web3.to_checksum_address(self.target_contract_address)
+        if checksummed != self.target_contract_address:
+            object.__setattr__(self, "target_contract_address", checksummed)
+
 
 @dataclass(frozen=True, slots=True)
 class OracleConfig:
     """Main configuration for the ROFL Oracle.
 
-    Attributes:
-        source_chain: Configuration for the source blockchain
-        target_chain: Configuration for the target Sapphire chain
-        monitoring: Configuration for monitoring and event processing
-        local_mode: Whether running in local mode (for testing)
-        local_private_key: Private key for local mode (optional)
+    :cvar common_config: Common configuration shared across all modes
+    :cvar oracle_mode: The operating mode of the oracle
+    :cvar mode_config: Mode-specific configuration (EventListenerModeConfig, PushModeConfig, or WatcherModeConfig)
+    :cvar local_mode: Whether running in local mode (for testing)
+    :cvar local_private_key: Private key for local mode (optional)
     """
 
-    source_chain: SourceChainConfig
-    target_chain: TargetChainConfig
-    monitoring: MonitoringConfig
+    common_config: CommonConfig
+    oracle_mode: OracleMode
+    mode_config: EventListenerModeConfig | PushModeConfig | WatcherModeConfig
     local_mode: bool = False
     local_private_key: str | None = None
 
@@ -217,6 +320,22 @@ class OracleConfig:
                     "Invalid private key format. Must be hexadecimal"
                 ) from None
 
+        # Validate mode-specific config matches oracle_mode
+        if self.oracle_mode == OracleMode.EVENT_LISTENER and not isinstance(
+            self.mode_config, EventListenerModeConfig
+        ):
+            raise ValueError(
+                "Event listener mode requires EventListenerModeConfig"
+            )
+        elif self.oracle_mode == OracleMode.PUSH and not isinstance(
+            self.mode_config, PushModeConfig
+        ):
+            raise ValueError("Push oracle mode requires PushModeConfig")
+        elif self.oracle_mode == OracleMode.WATCHER and not isinstance(
+            self.mode_config, WatcherModeConfig
+        ):
+            raise ValueError("Watcher mode requires WatcherModeConfig")
+
     @classmethod
     def from_env(cls, local_mode: bool = False) -> "OracleConfig":
         """Load configuration from environment variables.
@@ -230,61 +349,103 @@ class OracleConfig:
         Raises:
             ValueError: If required environment variables are missing or invalid
         """
-        # Load source chain config
+        # Load common configuration
         source_rpc_url = os.environ.get(
             "SOURCE_RPC_URL",
             "https://ethereum.publicnode.com",  # Default public RPC
         )
 
-        source_contract = os.environ.get("SOURCE_CONTRACT_ADDRESS", "")
-        # Allow empty string to enable push oracle mode
-        source_contract_addr = source_contract if source_contract else None
-
-        source_config = SourceChainConfig(
-            rpc_url=source_rpc_url, contract_address=source_contract_addr
-        )
-
-        # Load target chain config
-        # Target chain RPC URL - default to testnet if not specified
         target_rpc_url = os.environ.get(
             "TARGET_RPC_URL", "https://testnet.sapphire.oasis.io"
         )
-        target_contract = os.environ.get("CONTRACT_ADDRESS", "")
 
-        if not target_contract:
-            raise ValueError(
-                "CONTRACT_ADDRESS environment variable is required. "
-                "This should be the ROFLAdapter contract address on Sapphire."
-            )
+        target_contract_address = os.environ.get("ROFL_ADAPTER_ADDRESS", "")
 
-        target_config = TargetChainConfig(
-            rpc_url=target_rpc_url, contract_address=target_contract
-        )
-
-        # Load monitoring config
-        polling_interval = int(os.environ.get("POLLING_INTERVAL", "12"))
-        lookback_blocks = int(os.environ.get("LOOKBACK_BLOCKS", "9"))
         request_timeout = int(os.environ.get("REQUEST_TIMEOUT", "30"))
         retry_count = int(os.environ.get("RETRY_COUNT", "3"))
-        push_interval = int(os.environ.get("PUSH_INTERVAL", "60"))
 
-        monitoring_config = MonitoringConfig(
-            polling_interval=polling_interval,
-            lookback_blocks=lookback_blocks,
+        common_config = CommonConfig(
+            source_rpc_url=source_rpc_url,
+            source_chain_id=None,
+            target_rpc_url=target_rpc_url,
             request_timeout=request_timeout,
             retry_count=retry_count,
-            push_interval=push_interval,
+            target_contract_address=target_contract_address,
         )
 
-        # Load oracle config
+        # Determine oracle mode from environment
+        mode_str = os.environ.get("ORACLE_MODE", "event_listener").lower()
+
+        # Parse mode string to enum
+        oracle_mode: OracleMode
+        if mode_str == "event_listener":
+            oracle_mode = OracleMode.EVENT_LISTENER
+        elif mode_str == "push":
+            oracle_mode = OracleMode.PUSH
+        elif mode_str == "watcher":
+            oracle_mode = OracleMode.WATCHER
+        else:
+            raise ValueError(
+                f"Invalid ORACLE_MODE: {mode_str}. "
+                "Must be one of: event_listener, push, watcher"
+            )
+
+        # Load mode-specific configuration
+        mode_config: (
+            EventListenerModeConfig | PushModeConfig | WatcherModeConfig
+        )
+
+        if oracle_mode == OracleMode.EVENT_LISTENER:
+            mode_config = EventListenerModeConfig(
+                polling_interval=int(os.environ.get("POLLING_INTERVAL", "12")),
+                lookback_blocks=int(os.environ.get("LOOKBACK_BLOCKS", "100")),
+                contract_address=os.environ.get("SOURCE_CONTRACT_ADDRESS", ""),
+            )
+        elif oracle_mode == OracleMode.PUSH:
+            mode_config = PushModeConfig(
+                push_interval=int(os.environ.get("PUSH_INTERVAL", "60")),
+                batch_size=int(os.environ.get("PUSH_BATCH_SIZE", "20")),
+            )
+        else:  # OracleMode.WATCHER
+            watch_addresses_str = os.environ.get("WATCH_ADDRESSES", "")
+            if not watch_addresses_str:
+                raise ValueError(
+                    "WATCH_ADDRESSES is required for watcher mode. "
+                    "Provide comma-separated addresses."
+                )
+
+            # Parse comma-separated addresses
+            watch_addresses = [
+                addr.strip()
+                for addr in watch_addresses_str.split(",")
+                if addr.strip()
+            ]
+
+            if len(watch_addresses) == 0:
+                raise ValueError(
+                    "WATCH_ADDRESSES cannot be empty for watcher mode"
+                )
+
+            mode_config = WatcherModeConfig(
+                scan_interval=int(os.environ.get("SCAN_INTERVAL", "60")),
+                batch_size=int(os.environ.get("WATCHER_BATCH_SIZE", "50")),
+                lookback_blocks=int(os.environ.get("LOOKBACK_BLOCKS", "100")),
+                watch_addresses=watch_addresses,
+                enable_internal_tx_detection=os.environ.get(
+                    "ENABLE_INTERNAL_TX_DETECTION", "false"
+                ).lower()
+                in ("true", "1", "yes"),
+            )
+
+        # Load oracle-level config
         local_private_key = (
             os.environ.get("LOCAL_PRIVATE_KEY") if local_mode else None
         )
 
         return cls(
-            source_chain=source_config,
-            target_chain=target_config,
-            monitoring=monitoring_config,
+            common_config=common_config,
+            oracle_mode=oracle_mode,
+            mode_config=mode_config,
             local_mode=local_mode,
             local_private_key=local_private_key,
         )
@@ -295,30 +456,59 @@ class OracleConfig:
         logger.info("ROFL Oracle Configuration")
         logger.info("=" * 60)
 
-        logger.info("Source Chain:")
-        logger.info(f"  RPC URL: {self.source_chain.rpc_url}")
-        logger.info(f"  Mode: {'PUSH ORACLE' if self.source_chain.is_push_oracle else 'EVENT LISTENER'}")
-        if not self.source_chain.is_push_oracle:
-            logger.info(f"  Contract: {self.source_chain.contract_address}")
-        if self.source_chain.chain_id:
-            logger.info(f"  Chain ID: {self.source_chain.chain_id}")
+        logger.info("Oracle Mode:")
+        logger.info(f"  {self.oracle_mode.value.upper().replace('_', ' ')}")
 
-        logger.info("Target Chain (Sapphire):")
-        logger.info(f"  RPC URL: {self.target_chain.rpc_url}")
-        logger.info(f"  Contract: {self.target_chain.contract_address}")
+        logger.info("Common Configuration:")
+        logger.info(f"  Source RPC URL: {self.common_config.source_rpc_url}")
+        logger.info(f"  Target RPC URL: {self.common_config.target_rpc_url}")
+        logger.info(
+            f"  Target Contract: {self.common_config.target_contract_address}"
+        )
+        logger.info(
+            f"  Request Timeout: {self.common_config.request_timeout} seconds"
+        )
+        logger.info(f"  Retry Count: {self.common_config.retry_count}")
 
-        logger.info("Monitoring Settings:")
-        logger.info(
-            f"  Polling Interval: {self.monitoring.polling_interval} seconds"
-        )
-        logger.info(f"  Lookback Blocks: {self.monitoring.lookback_blocks}")
-        logger.info(
-            f"  Request Timeout: {self.monitoring.request_timeout} seconds"
-        )
-        logger.info(f"  Retry Count: {self.monitoring.retry_count}")
-        logger.info(
-            f"  Push Interval: {self.monitoring.push_interval} seconds"
-        )
+        if self.oracle_mode == OracleMode.EVENT_LISTENER:
+            assert isinstance(self.mode_config, EventListenerModeConfig)
+            logger.info("Event Listener Settings:")
+            logger.info(
+                f"  Contract Address: {self.mode_config.contract_address}"
+            )
+            logger.info(
+                f"  Polling Interval: {self.mode_config.polling_interval} seconds"
+            )
+            logger.info(
+                f"  Lookback Blocks: {self.mode_config.lookback_blocks}"
+            )
+
+        elif self.oracle_mode == OracleMode.PUSH:
+            assert isinstance(self.mode_config, PushModeConfig)
+            logger.info("Push Oracle Settings:")
+            logger.info(
+                f"  Push Interval: {self.mode_config.push_interval} seconds"
+            )
+            logger.info(f"  Batch Size: {self.mode_config.batch_size}")
+
+        elif self.oracle_mode == OracleMode.WATCHER:
+            assert isinstance(self.mode_config, WatcherModeConfig)
+            logger.info("Watcher Settings:")
+            logger.info(
+                f"  Scan Interval: {self.mode_config.scan_interval} seconds"
+            )
+            logger.info(f"  Batch Size: {self.mode_config.batch_size}")
+            logger.info(
+                f"  Lookback Blocks: {self.mode_config.lookback_blocks}"
+            )
+            logger.info(
+                f"  Internal TX Detection: {'ENABLED' if self.mode_config.enable_internal_tx_detection else 'DISABLED'}"
+            )
+            logger.info(
+                f"  Watching {len(self.mode_config.watch_addresses)} address(es):"
+            )
+            for addr in self.mode_config.watch_addresses:
+                logger.info(f"    - {addr}")
 
         logger.info("Oracle Settings:")
         logger.info(f"  Mode: {'LOCAL' if self.local_mode else 'PRODUCTION'}")
@@ -340,16 +530,19 @@ class OracleConfig:
         Returns:
             New OracleConfig instance with chain_id set
         """
-        source_config = SourceChainConfig(
-            rpc_url=self.source_chain.rpc_url,
-            contract_address=self.source_chain.contract_address,
-            chain_id=chain_id,
+        updated_common_config = CommonConfig(
+            source_rpc_url=self.common_config.source_rpc_url,
+            source_chain_id=chain_id,
+            target_rpc_url=self.common_config.target_rpc_url,
+            request_timeout=self.common_config.request_timeout,
+            retry_count=self.common_config.retry_count,
+            target_contract_address=self.common_config.target_contract_address,
         )
 
         return OracleConfig(
-            source_chain=source_config,
-            target_chain=self.target_chain,
-            monitoring=self.monitoring,
+            common_config=updated_common_config,
+            oracle_mode=self.oracle_mode,
+            mode_config=self.mode_config,
             local_mode=self.local_mode,
             local_private_key=self.local_private_key,
         )

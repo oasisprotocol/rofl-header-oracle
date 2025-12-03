@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.28;
+pragma solidity ^0.8.24;
 
 /**
  * @title BlockHeaderRequester
@@ -50,7 +50,9 @@ contract BlockHeaderRequester {
         bytes32 requestId = keccak256(abi.encode(chainId, blockNumber));
         
         // Simple deduplication to prevent redundant requests
-        require(!requestedBlocks[requestId], BlockAlreadyRequested(requestId));
+        if (requestedBlocks[requestId]) {
+            revert BlockAlreadyRequested(requestId);
+        }
         
         // Mark as requested
         requestedBlocks[requestId] = true;

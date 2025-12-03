@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Unit tests for the EventProcessor module."""
 
-
 import pytest
 
 from rofl_oracle.event_processor import EventProcessor

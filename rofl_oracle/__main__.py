@@ -13,21 +13,10 @@ import sys
 
 from rofl_oracle.config import OracleConfig
 from rofl_oracle.header_oracle import HeaderOracle
-
-
-def setup_logging(level: str = "INFO") -> None:
-    """Configure logging for the application.
-
-    Args:
-        level: Logging level as string (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-    """
-    log_level: int = getattr(logging, level.upper(), logging.INFO)
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
+from rofl_oracle.utils.logging_utility import setup_structured_logging
 
 logger = logging.getLogger(__name__)
+
 
 async def main() -> None:
     """Main entry point for the ROFL Header Oracle backend service.
@@ -52,9 +41,15 @@ async def main() -> None:
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         help="Set the logging level (default: INFO)",
     )
+    parser.add_argument(
+        "--json-logs",
+        action="store_true",
+        default=os.environ.get("JSON_LOGS", "").lower() in ("true", "1", "yes"),
+        help="Enable JSON-formatted structured logging",
+    )
     args: argparse.Namespace = parser.parse_args()
 
-    setup_logging(args.log_level)
+    setup_structured_logging(args.log_level, use_json=args.json_logs)
 
     logger.info(
         f"=== ROFL Header Oracle Starting {'(LOCAL MODE)' if args.local else ''} ==="
@@ -74,9 +69,12 @@ async def main() -> None:
             "  - TARGET_RPC_URL: Target chain RPC endpoint (default: testnet)"
         )
         logger.error(
-            "  - SOURCE_CONTRACT_ADDRESS: BlockHeaderRequester contract address (leave empty for push oracle mode)"
+            "  - SOURCE_CONTRACT_ADDRESS: BlockHeaderRequester contract address (for event_listener mode only)"
         )
-        logger.error("  - CONTRACT_ADDRESS: ROFLAdapter contract address")
+        logger.error(
+            "  - WATCH_ADDRESSES: Comma-separated addresses to watch (for watcher mode only)"
+        )
+        logger.error("  - ROFL_ADAPTER_ADDRESS: ROFLAdapter contract address")
         if args.local:
             logger.error("  - LOCAL_PRIVATE_KEY: Private key for local mode")
         sys.exit(1)
