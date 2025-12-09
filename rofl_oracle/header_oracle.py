@@ -1,4 +1,5 @@
 import logging
+import time
 from asyncio import sleep
 from typing import Any
 
@@ -237,6 +238,9 @@ class HeaderOracle:
                 # - Ensures no blocks are permanently skipped even if process crashes
                 # - Trades potential re-scanning for data integrity
                 self.last_scanned_block: int | None = None
+                # Heartbeat tracking for periodic checkpoint submissions
+                # Ensures sync time is bounded even without watched address activity
+                self.last_heartbeat_time: float | None = None
             elif config.oracle_mode == OracleMode.PUSH:
                 logger.info("Push oracle mode - will push latest block headers")
                 self.event_listener = None
@@ -436,11 +440,22 @@ class HeaderOracle:
         """
         Watch configured addresses for any interactions and push blocks when detected.
         Used in watcher mode.
+
+        Also submits periodic heartbeat blocks when no activity is detected,
+        to ensure sync time is bounded on oracle restart.
         """
         try:
             # Get the latest block from source chain
             latest_block_number = self.source_w3.eth.block_number
             assert isinstance(self.config.mode_config, WatcherModeConfig)
+
+            # Check if heartbeat is due (first run or interval elapsed)
+            current_time = time.time()
+            heartbeat_interval = self.config.mode_config.heartbeat_interval_seconds
+            heartbeat_due = (
+                self.last_heartbeat_time is None
+                or (current_time - self.last_heartbeat_time) >= heartbeat_interval
+            )
 
             # Determine starting point using last_scanned_block (in-memory state)
             # Track the last processed block for logging purposes
@@ -527,7 +542,10 @@ class HeaderOracle:
 
                 except Exception as e:
                     logger.error(f"Error processing block {block_number}: {e}")
-                    break
+                    break  # Stop and retry this block next cycle
+
+            # Submit all blocks with interactions in a single batch
+            submission_success = False
             if blocks_with_interactions:
                 logger.info(
                     f"Submitting batch of {len(blocks_with_interactions)} blocks with interactions"
@@ -540,11 +558,51 @@ class HeaderOracle:
                     logger.info(
                         f"Successfully pushed {len(blocks_with_interactions)} block headers with interactions"
                     )
+                    submission_success = True
+                    # Reset heartbeat timer on successful activity submission
+                    self.last_heartbeat_time = time.time()
                 else:
                     logger.error(
                         f"Failed to push batch of {len(blocks_with_interactions)} block headers"
                     )
 
+            # Submit heartbeat if no interactions found and heartbeat is due
+            elif heartbeat_due and last_successful_block >= start_block:
+                # Use the last successfully scanned block as the heartbeat checkpoint
+                heartbeat_block = last_successful_block
+                logger.info(
+                    f"No interactions found, submitting heartbeat block {heartbeat_block}"
+                )
+
+                # Fetch the block to get its hash
+                block = await self.fetch_block_by_number(heartbeat_block)
+                if block:
+                    block_hash = block.get("hash")
+                    if block_hash is not None:
+                        block_hash_hex = (
+                            block_hash.hex()
+                            if isinstance(block_hash, bytes)
+                            else block_hash
+                        )
+                        if not block_hash_hex.startswith("0x"):
+                            block_hash_hex = "0x" + block_hash_hex
+
+                        success = await self.block_submitter.submit_block_header(
+                            heartbeat_block, block_hash_hex
+                        )
+
+                        if success:
+                            logger.info(
+                                f"Heartbeat: stored block {heartbeat_block} as checkpoint"
+                            )
+                            submission_success = True
+                            self.last_heartbeat_time = time.time()
+                        else:
+                            logger.error(
+                                f"Failed to submit heartbeat block {heartbeat_block}"
+                            )
+
+            # Update scan position to last successfully processed block
             if last_successful_block >= start_block:
                 self.last_scanned_block = last_successful_block
             scanned_count = (

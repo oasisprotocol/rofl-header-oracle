@@ -781,6 +781,7 @@ class TestWatcherMode:
             lookback_blocks=10,
         )
         oracle.last_scanned_block = None
+        oracle.last_heartbeat_time = None
 
         # Mock BlockSubmitter
         mock_block_submitter = MagicMock()
@@ -835,6 +836,7 @@ class TestWatcherMode:
             enable_internal_tx_detection=False,
         )
         oracle.last_scanned_block = None
+        oracle.last_heartbeat_time = None
 
         # Mock BlockSubmitter
         mock_block_submitter = MagicMock()
@@ -927,6 +929,7 @@ class TestWatcherMode:
             enable_internal_tx_detection=False,
         )
         oracle.last_scanned_block = None
+        oracle.last_heartbeat_time = None
 
         # Mock BlockSubmitter
         mock_block_submitter = MagicMock()
@@ -1869,3 +1872,281 @@ class TestTokenWatcherMode:
             )
 
         assert len(oracle.processed_tx_hashes) <= oracle.max_tx_cache_size
+    @pytest.mark.asyncio
+    async def test_heartbeat_triggers_without_activity(self):
+        """Test that heartbeat triggers when interval elapsed and no interactions found."""
+        oracle = HeaderOracle()
+        oracle.watched_addresses = {
+            "0x742d35cc6634c0532925a3b844bc9e7595f0beb7"
+        }
+        oracle.config = MagicMock()
+        oracle.config.mode_config = WatcherModeConfig(
+            watch_addresses=["0x742d35cc6634c0532925a3b844bc9e7595f0beb7"],
+            scan_interval=60,
+            batch_size=50,
+            lookback_blocks=10,
+            heartbeat_interval_seconds=3600,
+        )
+        oracle.last_scanned_block = 990
+
+        # Set heartbeat time to 4000 seconds ago (past the 3600s interval)
+        with patch("time.time") as mock_time:
+            current_time = 10000.0
+            past_heartbeat_time = current_time - 4000.0
+            oracle.last_heartbeat_time = past_heartbeat_time
+            mock_time.return_value = current_time
+
+            # Mock BlockSubmitter
+            mock_block_submitter = MagicMock()
+            mock_block_submitter.get_latest_block_number = AsyncMock(
+                return_value=990
+            )
+            mock_block_submitter.submit_block_header = AsyncMock(
+                return_value=True
+            )
+            oracle.block_submitter = mock_block_submitter
+
+            # Mock Web3
+            oracle.source_w3 = MagicMock()
+            oracle.source_w3.eth.block_number = 1000
+
+            # Mock check for interactions - no interactions found
+            oracle._check_block_for_interactions = AsyncMock(return_value=False)
+
+            # Mock fetch block for heartbeat submission
+            def mock_fetch_block(block_num):
+                return {"number": block_num, "hash": f"0x{block_num:064x}"}
+
+            oracle.fetch_block_by_number = AsyncMock(
+                side_effect=mock_fetch_block
+            )
+
+            await oracle.watch_addresses_for_interactions()
+
+            # Verify heartbeat was sent (last scanned block is 1000)
+            mock_block_submitter.submit_block_header.assert_called_once()
+            call_args = mock_block_submitter.submit_block_header.call_args[0]
+            assert call_args[0] == 1000  # Last scanned block
+            assert call_args[1] == f"0x{1000:064x}"
+
+            # Verify heartbeat time was updated
+            assert oracle.last_heartbeat_time == current_time
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_skipped_when_not_due(self):
+        """Test that heartbeat is skipped when interval has not elapsed."""
+        oracle = HeaderOracle()
+        oracle.watched_addresses = {
+            "0x742d35cc6634c0532925a3b844bc9e7595f0beb7"
+        }
+        oracle.config = MagicMock()
+        oracle.config.mode_config = WatcherModeConfig(
+            watch_addresses=["0x742d35cc6634c0532925a3b844bc9e7595f0beb7"],
+            scan_interval=60,
+            batch_size=50,
+            lookback_blocks=10,
+            heartbeat_interval_seconds=3600,
+        )
+        oracle.last_scanned_block = 990
+
+        # Set heartbeat time to very recent (not due)
+        with patch("time.time") as mock_time:
+            current_time = 10000.0
+            oracle.last_heartbeat_time = current_time  # Just happened
+            mock_time.return_value = current_time
+
+            # Mock BlockSubmitter
+            mock_block_submitter = MagicMock()
+            mock_block_submitter.get_latest_block_number = AsyncMock(
+                return_value=990
+            )
+            mock_block_submitter.submit_block_header = AsyncMock()
+            mock_block_submitter.submit_block_headers_batch = AsyncMock()
+            oracle.block_submitter = mock_block_submitter
+
+            # Mock Web3
+            oracle.source_w3 = MagicMock()
+            oracle.source_w3.eth.block_number = 1000
+
+            # Mock check for interactions - no interactions found
+            oracle._check_block_for_interactions = AsyncMock(return_value=False)
+
+            oracle.fetch_block_by_number = AsyncMock()
+
+            await oracle.watch_addresses_for_interactions()
+
+            # Verify no heartbeat was sent (not due)
+            mock_block_submitter.submit_block_header.assert_not_called()
+            mock_block_submitter.submit_block_headers_batch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_resets_on_activity(self):
+        """Test that heartbeat time resets when activity is found and submitted."""
+        oracle = HeaderOracle()
+        oracle.watched_addresses = {
+            "0x742d35cc6634c0532925a3b844bc9e7595f0beb7"
+        }
+        oracle.config = MagicMock()
+        oracle.config.mode_config = WatcherModeConfig(
+            watch_addresses=["0x742d35cc6634c0532925a3b844bc9e7595f0beb7"],
+            scan_interval=60,
+            batch_size=50,
+            lookback_blocks=10,
+            heartbeat_interval_seconds=3600,
+        )
+        oracle.last_scanned_block = 990
+        oracle.last_heartbeat_time = None  # First run
+
+        with patch("time.time") as mock_time:
+            current_time = 10000.0
+            mock_time.return_value = current_time
+
+            # Mock BlockSubmitter
+            mock_block_submitter = MagicMock()
+            mock_block_submitter.get_latest_block_number = AsyncMock(
+                return_value=990
+            )
+            mock_block_submitter.submit_block_headers_batch = AsyncMock(
+                return_value=True
+            )
+            oracle.block_submitter = mock_block_submitter
+
+            # Mock Web3
+            oracle.source_w3 = MagicMock()
+            oracle.source_w3.eth.block_number = 1000
+
+            # Mock check for interactions - block 995 has interaction
+            async def mock_check_block(block_num):
+                return block_num == 995
+
+            oracle._check_block_for_interactions = AsyncMock(
+                side_effect=mock_check_block
+            )
+
+            # Mock fetch block
+            def mock_fetch_block(block_num):
+                return {"number": block_num, "hash": f"0x{block_num:064x}"}
+
+            oracle.fetch_block_by_number = AsyncMock(
+                side_effect=mock_fetch_block
+            )
+
+            await oracle.watch_addresses_for_interactions()
+
+            # Verify activity was submitted
+            mock_block_submitter.submit_block_headers_batch.assert_called_once_with(
+                [995], [f"0x{995:064x}"]
+            )
+
+            # Verify heartbeat time was set (not None anymore)
+            assert oracle.last_heartbeat_time is not None
+            assert oracle.last_heartbeat_time == current_time
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_first_run(self):
+        """Test that heartbeat triggers on first run when no interactions found."""
+        oracle = HeaderOracle()
+        oracle.watched_addresses = {
+            "0x742d35cc6634c0532925a3b844bc9e7595f0beb7"
+        }
+        oracle.config = MagicMock()
+        oracle.config.mode_config = WatcherModeConfig(
+            watch_addresses=["0x742d35cc6634c0532925a3b844bc9e7595f0beb7"],
+            scan_interval=60,
+            batch_size=50,
+            lookback_blocks=10,
+            heartbeat_interval_seconds=3600,
+        )
+        oracle.last_scanned_block = 990
+        oracle.last_heartbeat_time = None  # First run triggers heartbeat
+
+        with patch("time.time") as mock_time:
+            current_time = 10000.0
+            mock_time.return_value = current_time
+
+            # Mock BlockSubmitter
+            mock_block_submitter = MagicMock()
+            mock_block_submitter.get_latest_block_number = AsyncMock(
+                return_value=990
+            )
+            mock_block_submitter.submit_block_header = AsyncMock(
+                return_value=True
+            )
+            oracle.block_submitter = mock_block_submitter
+
+            # Mock Web3
+            oracle.source_w3 = MagicMock()
+            oracle.source_w3.eth.block_number = 1000
+
+            # Mock check for interactions - no interactions found
+            oracle._check_block_for_interactions = AsyncMock(return_value=False)
+
+            # Mock fetch block for heartbeat
+            def mock_fetch_block(block_num):
+                return {"number": block_num, "hash": f"0x{block_num:064x}"}
+
+            oracle.fetch_block_by_number = AsyncMock(
+                side_effect=mock_fetch_block
+            )
+
+            await oracle.watch_addresses_for_interactions()
+
+            # Verify heartbeat was sent on first run
+            mock_block_submitter.submit_block_header.assert_called_once()
+            call_args = mock_block_submitter.submit_block_header.call_args[0]
+            assert call_args[0] == 1000  # Last scanned block
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_uses_last_scanned_block(self):
+        """Test that heartbeat uses the last successfully scanned block number."""
+        oracle = HeaderOracle()
+        oracle.watched_addresses = {
+            "0x742d35cc6634c0532925a3b844bc9e7595f0beb7"
+        }
+        oracle.config = MagicMock()
+        oracle.config.mode_config = WatcherModeConfig(
+            watch_addresses=["0x742d35cc6634c0532925a3b844bc9e7595f0beb7"],
+            scan_interval=60,
+            batch_size=50,
+            lookback_blocks=10,
+            heartbeat_interval_seconds=3600,
+        )
+        oracle.last_scanned_block = 990
+        oracle.last_heartbeat_time = None  # Trigger heartbeat
+
+        with patch("time.time") as mock_time:
+            current_time = 10000.0
+            mock_time.return_value = current_time
+
+            # Mock BlockSubmitter
+            mock_block_submitter = MagicMock()
+            mock_block_submitter.get_latest_block_number = AsyncMock(
+                return_value=990
+            )
+            mock_block_submitter.submit_block_header = AsyncMock(
+                return_value=True
+            )
+            oracle.block_submitter = mock_block_submitter
+
+            # Mock Web3 - blocks 991-1000 will be scanned
+            oracle.source_w3 = MagicMock()
+            oracle.source_w3.eth.block_number = 1000
+
+            # Mock check for interactions - no interactions found
+            oracle._check_block_for_interactions = AsyncMock(return_value=False)
+
+            # Mock fetch block - returns blocks 991-1000
+            def mock_fetch_block(block_num):
+                return {"number": block_num, "hash": f"0x{block_num:064x}"}
+
+            oracle.fetch_block_by_number = AsyncMock(
+                side_effect=mock_fetch_block
+            )
+
+            await oracle.watch_addresses_for_interactions()
+
+            # Verify heartbeat was sent with the last scanned block (1000)
+            mock_block_submitter.submit_block_header.assert_called_once()
+            call_args = mock_block_submitter.submit_block_header.call_args[0]
+            assert call_args[0] == 1000  # Last scanned block
+            assert call_args[1] == f"0x{1000:064x}"
