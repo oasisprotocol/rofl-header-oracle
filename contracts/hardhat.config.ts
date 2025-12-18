@@ -65,6 +65,12 @@ const config: HardhatUserConfig = {
       url: configVariable("SAPPHIRE_MAINNET_RPC_URL"),
       accounts: [configVariable("SAPPHIRE_PRIVATE_KEY")],
     },
+    base: {
+      type: "http",
+      chainType: "l1",
+      url: configVariable("BASE_RPC_URL"),
+      accounts: [configVariable("BASE_PRIVATE_KEY")],
+    },
   },
 };
 
