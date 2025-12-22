@@ -20,9 +20,10 @@ logger = logging.getLogger(__name__)
 class OracleMode(Enum):
     """Oracle operating modes."""
 
-    EVENT_LISTENER = "event_listener"  # Listen for BlockHeaderRequested events
-    PUSH = "push"  # Push latest block headers periodically
-    WATCHER = "watcher"  # Watch specific addresses for interactions
+    EVENT_LISTENER = "event_listener"
+    PUSH = "push"
+    WATCHER = "watcher"
+    TOKEN_WATCHER = "token_watcher"
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,6 +193,60 @@ class WatcherModeConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class TokenWatcherModeConfig:
+    """Configuration specific to token watcher mode.
+
+    This mode watches for ERC20 token transfers to specific recipient addresses
+    and pushes block headers when such transfers are detected.
+
+    :cvar token_addresses: List of ERC20 token contract addresses to monitor (env: TOKEN_ADDRESSES, comma-separated)
+    :cvar recipient_addresses: List of recipient addresses to watch for (env: RECIPIENT_ADDRESSES, comma-separated)
+    :cvar scan_interval: Seconds between scanning for token transfers (env: SCAN_INTERVAL)
+    """
+
+    token_addresses: list[str]
+    recipient_addresses: list[str]
+    scan_interval: int
+
+    def __post_init__(self) -> None:
+        """Validate token watcher configuration."""
+        if self.scan_interval <= 0:
+            raise ValueError(
+                f"Scan interval must be positive, got {self.scan_interval}"
+            )
+        if self.scan_interval > 300:
+            raise ValueError(
+                f"Scan interval too long (max 300s), got {self.scan_interval}"
+            )
+
+        if not self.token_addresses or len(self.token_addresses) == 0:
+            raise ValueError(
+                "Token watcher mode requires at least one token address"
+            )
+
+        if not self.recipient_addresses or len(self.recipient_addresses) == 0:
+            raise ValueError(
+                "Token watcher mode requires at least one recipient address"
+            )
+
+        # Validate and checksum token addresses
+        checksummed_tokens = []
+        for addr in self.token_addresses:
+            if not Web3.is_address(addr):
+                raise ValueError(f"Invalid token address: {addr}")
+            checksummed_tokens.append(Web3.to_checksum_address(addr))
+        object.__setattr__(self, "token_addresses", checksummed_tokens)
+
+        # Validate and checksum recipient addresses
+        checksummed_recipients = []
+        for addr in self.recipient_addresses:
+            if not Web3.is_address(addr):
+                raise ValueError(f"Invalid recipient address: {addr}")
+            checksummed_recipients.append(Web3.to_checksum_address(addr))
+        object.__setattr__(self, "recipient_addresses", checksummed_recipients)
+
+
+@dataclass(frozen=True, slots=True)
 class CommonConfig:
     """Configuration common to all oracle modes.
 
@@ -283,14 +338,19 @@ class OracleConfig:
 
     :cvar common_config: Common configuration shared across all modes
     :cvar oracle_mode: The operating mode of the oracle
-    :cvar mode_config: Mode-specific configuration (EventListenerModeConfig, PushModeConfig, or WatcherModeConfig)
+    :cvar mode_config: Mode-specific configuration (EventListenerModeConfig, PushModeConfig, WatcherModeConfig, or TokenWatcherModeConfig)
     :cvar local_mode: Whether running in local mode (for testing)
     :cvar local_private_key: Private key for local mode (optional)
     """
 
     common_config: CommonConfig
     oracle_mode: OracleMode
-    mode_config: EventListenerModeConfig | PushModeConfig | WatcherModeConfig
+    mode_config: (
+        EventListenerModeConfig
+        | PushModeConfig
+        | WatcherModeConfig
+        | TokenWatcherModeConfig
+    )
     local_mode: bool = False
     local_private_key: str | None = None
 
@@ -335,6 +395,12 @@ class OracleConfig:
             self.mode_config, WatcherModeConfig
         ):
             raise ValueError("Watcher mode requires WatcherModeConfig")
+        elif self.oracle_mode == OracleMode.TOKEN_WATCHER and not isinstance(
+            self.mode_config, TokenWatcherModeConfig
+        ):
+            raise ValueError(
+                "Token watcher mode requires TokenWatcherModeConfig"
+            )
 
     @classmethod
     def from_env(cls, local_mode: bool = False) -> "OracleConfig":
@@ -384,15 +450,20 @@ class OracleConfig:
             oracle_mode = OracleMode.PUSH
         elif mode_str == "watcher":
             oracle_mode = OracleMode.WATCHER
+        elif mode_str == "token_watcher":
+            oracle_mode = OracleMode.TOKEN_WATCHER
         else:
             raise ValueError(
                 f"Invalid ORACLE_MODE: {mode_str}. "
-                "Must be one of: event_listener, push, watcher"
+                "Must be one of: event_listener, push, watcher, token_watcher"
             )
 
         # Load mode-specific configuration
         mode_config: (
-            EventListenerModeConfig | PushModeConfig | WatcherModeConfig
+            EventListenerModeConfig
+            | PushModeConfig
+            | WatcherModeConfig
+            | TokenWatcherModeConfig
         )
 
         if oracle_mode == OracleMode.EVENT_LISTENER:
@@ -406,7 +477,7 @@ class OracleConfig:
                 push_interval=int(os.environ.get("PUSH_INTERVAL", "60")),
                 batch_size=int(os.environ.get("PUSH_BATCH_SIZE", "20")),
             )
-        else:  # OracleMode.WATCHER
+        elif oracle_mode == OracleMode.WATCHER:
             watch_addresses_str = os.environ.get("WATCH_ADDRESSES", "")
             if not watch_addresses_str:
                 raise ValueError(
@@ -435,6 +506,46 @@ class OracleConfig:
                     "ENABLE_INTERNAL_TX_DETECTION", "false"
                 ).lower()
                 in ("true", "1", "yes"),
+            )
+        else:  # OracleMode.TOKEN_WATCHER
+            token_addresses_str = os.environ.get("TOKEN_ADDRESSES", "")
+            if not token_addresses_str:
+                raise ValueError(
+                    "TOKEN_ADDRESSES is required for token watcher mode. "
+                    "Provide comma-separated token contract addresses (e.g., USDC, USDT)."
+                )
+
+            recipient_addresses_str = os.environ.get("RECIPIENT_ADDRESSES", "")
+            if not recipient_addresses_str:
+                raise ValueError(
+                    "RECIPIENT_ADDRESSES is required for token watcher mode. "
+                    "Provide comma-separated recipient addresses to watch."
+                )
+
+            # Parse comma-separated token addresses
+            token_addresses = [
+                addr.strip()
+                for addr in token_addresses_str.split(",")
+                if addr.strip()
+            ]
+
+            if len(token_addresses) == 0:
+                raise ValueError("TOKEN_ADDRESSES cannot be empty")
+
+            # Parse comma-separated recipient addresses
+            recipient_addresses = [
+                addr.strip()
+                for addr in recipient_addresses_str.split(",")
+                if addr.strip()
+            ]
+
+            if len(recipient_addresses) == 0:
+                raise ValueError("RECIPIENT_ADDRESSES cannot be empty")
+
+            mode_config = TokenWatcherModeConfig(
+                token_addresses=token_addresses,
+                recipient_addresses=recipient_addresses,
+                scan_interval=int(os.environ.get("SCAN_INTERVAL", "5")),
             )
 
         # Load oracle-level config
@@ -508,6 +619,26 @@ class OracleConfig:
                 f"  Watching {len(self.mode_config.watch_addresses)} address(es):"
             )
             for addr in self.mode_config.watch_addresses:
+                logger.info(f"    - {addr}")
+
+        elif self.oracle_mode == OracleMode.TOKEN_WATCHER:
+            assert isinstance(self.mode_config, TokenWatcherModeConfig)
+            logger.info("Token Watcher Settings:")
+            logger.info(
+                f"  Scan Interval: {self.mode_config.scan_interval} seconds"
+            )
+            logger.info(
+                "  Mode: Real-time (scans all new blocks since last check)"
+            )
+            logger.info(
+                f"  Watching {len(self.mode_config.token_addresses)} token(s):"
+            )
+            for addr in self.mode_config.token_addresses:
+                logger.info(f"    - {addr}")
+            logger.info(
+                f"  Monitoring {len(self.mode_config.recipient_addresses)} recipient(s):"
+            )
+            for addr in self.mode_config.recipient_addresses:
                 logger.info(f"    - {addr}")
 
         logger.info("Oracle Settings:")
