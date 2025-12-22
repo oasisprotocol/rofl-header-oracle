@@ -6,7 +6,7 @@ services:
     image: ghcr.io/rube-de/rofl-header-oracle:latest
     platform: linux/amd64
     container_name: rofl_header_oracle
-    entrypoint: /bin/sh -c 'uv run python -m rofl_oracle --local --log-level DEBUG'
+    entrypoint: /bin/sh -c 'uv run python -m rofl_oracle --local'
     ports:
       - "8080:8080"  # Health check endpoint
     environment:
@@ -20,12 +20,12 @@ services:
       REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-30}  # HTTP request timeout in seconds
       RETRY_COUNT: ${RETRY_COUNT:-3}  # Number of retry attempts
 
-      # Oracle mode: event_listener, push, or watcher
+      # Oracle mode: event_listener, push, watcher, or token_watcher
       ORACLE_MODE: ${ORACLE_MODE:-event_listener}
 
       # Logging configuration
-      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}  # DEBUG mode for local testing
-      JSON_LOGS: ${JSON_LOGS:-false}  # Enable JSON-formatted structured logging
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      JSON_LOGS: ${JSON_LOGS:-false}
 
       # Event Listener Mode Configuration (ORACLE_MODE=event_listener)
       SOURCE_CONTRACT_ADDRESS: ${SOURCE_CONTRACT_ADDRESS:-}  # Required for event_listener mode
@@ -42,8 +42,12 @@ services:
       WATCHER_BATCH_SIZE: ${WATCHER_BATCH_SIZE:-50}  # Max blocks to scan per iteration
       ENABLE_INTERNAL_TX_DETECTION: ${ENABLE_INTERNAL_TX_DETECTION:-false}  # Requires archive node with debug API
 
+      # Token Watcher Mode Configuration (ORACLE_MODE=token_watcher)
+      TOKEN_ADDRESSES: ${TOKEN_ADDRESSES:-}  # Required for token_watcher mode - comma-separated token contract addresses
+      RECIPIENT_ADDRESSES: ${RECIPIENT_ADDRESSES:-}  # Required for token_watcher mode - comma-separated recipient addresses
+
       # Local mode configuration (for testing without ROFL)
       LOCAL_PRIVATE_KEY: ${LOCAL_PRIVATE_KEY:-}  # Required in local mode - private key for testing
-    
+
     restart: on-failure
     # Note: No ROFL socket volume mount needed in local mode
