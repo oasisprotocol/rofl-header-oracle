@@ -219,7 +219,7 @@ class HeaderOracle:
                     logger.info(f"  Recipient: {addr}")
                 self.event_listener = None
                 self.last_scanned_block: int | None = None
-                self.processed_tx_hashes: set[str] = set()
+                self.processed_tx_hashes: dict[str, None] = {}
                 self.max_tx_cache_size = 10000
             elif config.oracle_mode == OracleMode.WATCHER:
                 assert isinstance(config.mode_config, WatcherModeConfig)
@@ -718,7 +718,9 @@ class HeaderOracle:
             blocks_with_transfers = set()
 
             for token_addr in self.config.mode_config.token_addresses:
-                for recipient_addr in self.config.mode_config.recipient_addresses:
+                for (
+                    recipient_addr
+                ) in self.config.mode_config.recipient_addresses:
                     recipient_topic = "0x" + recipient_addr[2:].lower().zfill(
                         64
                     )
@@ -751,16 +753,17 @@ class HeaderOracle:
                                 if tx_hash_str in self.processed_tx_hashes:
                                     continue
 
-                                self.processed_tx_hashes.add(tx_hash_str)
+                                self.processed_tx_hashes[tx_hash_str] = None
 
                                 if (
                                     len(self.processed_tx_hashes)
                                     > self.max_tx_cache_size
                                 ):
-                                    to_remove = list(self.processed_tx_hashes)[
-                                        : self.max_tx_cache_size // 2
-                                    ]
-                                    self.processed_tx_hashes -= set(to_remove)
+                                    keys_to_remove = list(
+                                        self.processed_tx_hashes.keys()
+                                    )[: self.max_tx_cache_size // 2]
+                                    for key in keys_to_remove:
+                                        del self.processed_tx_hashes[key]
 
                                 blocks_with_transfers.add(block_num)
                                 logger.info(

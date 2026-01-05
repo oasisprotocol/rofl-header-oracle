@@ -1378,7 +1378,7 @@ class TestTokenWatcherMode:
             scan_interval=10,
         )
         oracle.last_scanned_block = None
-        oracle.processed_tx_hashes = set()
+        oracle.processed_tx_hashes = {}
         oracle.max_tx_cache_size = 1000
 
         mock_block_submitter = MagicMock()
@@ -1419,7 +1419,7 @@ class TestTokenWatcherMode:
             scan_interval=10,
         )
         oracle.last_scanned_block = 990
-        oracle.processed_tx_hashes = set()
+        oracle.processed_tx_hashes = {}
         oracle.max_tx_cache_size = 1000
 
         mock_block_submitter = MagicMock()
@@ -1462,7 +1462,7 @@ class TestTokenWatcherMode:
             scan_interval=10,
         )
         oracle.last_scanned_block = 990
-        oracle.processed_tx_hashes = set()
+        oracle.processed_tx_hashes = {}
         oracle.max_tx_cache_size = 1000
 
         mock_block_submitter = MagicMock()
@@ -1492,7 +1492,7 @@ class TestTokenWatcherMode:
             scan_interval=10,
         )
         oracle.last_scanned_block = 990
-        oracle.processed_tx_hashes = {"1234" * 16}
+        oracle.processed_tx_hashes = {"1234" * 16: None}
         oracle.max_tx_cache_size = 1000
 
         mock_block_submitter = MagicMock()
@@ -1533,7 +1533,7 @@ class TestTokenWatcherMode:
             scan_interval=10,
         )
         oracle.last_scanned_block = 1000
-        oracle.processed_tx_hashes = set()
+        oracle.processed_tx_hashes = {}
 
         mock_block_submitter = MagicMock()
         mock_block_submitter.submit_block_headers_batch = AsyncMock()
@@ -1561,7 +1561,7 @@ class TestTokenWatcherMode:
             scan_interval=10,
         )
         oracle.last_scanned_block = 990
-        oracle.processed_tx_hashes = set()
+        oracle.processed_tx_hashes = {}
         oracle.max_tx_cache_size = 1000
 
         mock_block_submitter = MagicMock()
@@ -1599,7 +1599,7 @@ class TestTokenWatcherMode:
             scan_interval=10,
         )
         oracle.last_scanned_block = 990
-        oracle.processed_tx_hashes = set()
+        oracle.processed_tx_hashes = {}
 
         mock_block_submitter = MagicMock()
         oracle.block_submitter = mock_block_submitter
@@ -1629,7 +1629,7 @@ class TestTokenWatcherMode:
             scan_interval=10,
         )
         oracle.last_scanned_block = 990
-        oracle.processed_tx_hashes = set()
+        oracle.processed_tx_hashes = {}
         oracle.max_tx_cache_size = 1000
 
         mock_block_submitter = MagicMock()
@@ -1681,7 +1681,7 @@ class TestTokenWatcherMode:
             scan_interval=10,
         )
         oracle.last_scanned_block = 990
-        oracle.processed_tx_hashes = {f"tx{i}" for i in range(100)}
+        oracle.processed_tx_hashes = {f"tx{i}": None for i in range(100)}
         oracle.max_tx_cache_size = 100
 
         mock_block_submitter = MagicMock()
@@ -1762,7 +1762,7 @@ class TestTokenWatcherMode:
             scan_interval=10,
         )
         oracle.last_scanned_block = 990
-        oracle.processed_tx_hashes = set()
+        oracle.processed_tx_hashes = {}
         oracle.max_tx_cache_size = 1000
 
         mock_block_submitter = MagicMock()
@@ -1791,3 +1791,50 @@ class TestTokenWatcherMode:
         mock_block_submitter.submit_block_headers_batch.assert_called_once_with(
             [995], [f"0x{995:064x}"]
         )
+
+    @pytest.mark.asyncio
+    async def test_watch_token_transfers_cache_evicts_oldest_entries(self):
+        """Test that cache eviction removes oldest entries, not random ones."""
+        oracle = HeaderOracle()
+        oracle.config = MagicMock()
+        oracle.config.mode_config = TokenWatcherModeConfig(
+            token_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"],
+            recipient_addresses=["0xabcdef0123456789abcdef0123456789abcdef01"],
+            scan_interval=10,
+        )
+        oracle.last_scanned_block = 990
+        oracle.processed_tx_hashes = {f"old_tx_{i}": None for i in range(100)}
+        oracle.max_tx_cache_size = 100
+
+        mock_block_submitter = MagicMock()
+        mock_block_submitter.submit_block_headers_batch = AsyncMock(
+            return_value=True
+        )
+        oracle.block_submitter = mock_block_submitter
+
+        oracle.source_w3 = MagicMock()
+        oracle.source_w3.eth.block_number = 1000
+
+        mock_log = {"transactionHash": b"\x12\x34" * 16, "blockNumber": 995}
+        oracle.source_w3.eth.get_logs.return_value = [mock_log]
+
+        def mock_fetch_block(block_num):
+            return {"number": block_num, "hash": f"0x{block_num:064x}"}
+
+        oracle.fetch_block_by_number = AsyncMock(side_effect=mock_fetch_block)
+
+        oldest_keys = list(oracle.processed_tx_hashes.keys())[:50]
+
+        await oracle.watch_token_transfers()
+
+        for old_key in oldest_keys:
+            assert old_key not in oracle.processed_tx_hashes, (
+                f"Oldest key {old_key} should have been evicted"
+            )
+
+        for i in range(50, 100):
+            assert f"old_tx_{i}" in oracle.processed_tx_hashes, (
+                f"Recent key old_tx_{i} should still be in cache"
+            )
+
+        assert len(oracle.processed_tx_hashes) <= oracle.max_tx_cache_size
