@@ -30,10 +30,8 @@ RUN uv sync --frozen
 # Copy source code
 COPY rofl_oracle/ ./rofl_oracle/
 
-# Copy ABIs from contracts build stage
-RUN mkdir -p abis
-COPY --from=contracts-builder /contracts/artifacts/contracts/hashi/adapters/Oasis/ROFLAdapter.sol/ROFLAdapter.json ./abis/
-COPY --from=contracts-builder /contracts/artifacts/contracts/BlockHeaderRequester.sol/BlockHeaderRequester.json ./abis/
+# Copy pre-compiled ABIs directly
+COPY abis/ ./abis/
 
 # Run the oracle using module execution
 ENTRYPOINT ["uv", "run", "python", "-m", "rofl_oracle"]

@@ -10,6 +10,7 @@ from .config import (
     EventListenerModeConfig,
     OracleConfig,
     OracleMode,
+    TokenWatcherModeConfig,
     WatcherModeConfig,
 )
 from .event_processor import EventProcessor
@@ -26,6 +27,10 @@ from .utils.retry_utility import (
 from .utils.rofl_utility import RoflUtility
 
 logger = logging.getLogger(__name__)
+
+TRANSFER_EVENT_SIGNATURE = (
+    "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+)
 
 
 class HeaderOracle:
@@ -201,8 +206,22 @@ class HeaderOracle:
             else:
                 self.block_requester_abi = None
 
-            # Initialize polling event listener, push mode, or watcher mode (based on config)
-            if config.oracle_mode == OracleMode.WATCHER:
+            # Initialize mode-specific components
+            if config.oracle_mode == OracleMode.TOKEN_WATCHER:
+                assert isinstance(config.mode_config, TokenWatcherModeConfig)
+                logger.info(
+                    f"Token watcher mode - monitoring {len(config.mode_config.token_addresses)} token(s) "
+                    f"for transfers to {len(config.mode_config.recipient_addresses)} recipient(s)"
+                )
+                for addr in config.mode_config.token_addresses:
+                    logger.info(f"  Token: {addr}")
+                for addr in config.mode_config.recipient_addresses:
+                    logger.info(f"  Recipient: {addr}")
+                self.event_listener = None
+                self.last_scanned_block: int | None = None
+                self.processed_tx_hashes: set[str] = set()
+                self.max_tx_cache_size = 10000
+            elif config.oracle_mode == OracleMode.WATCHER:
                 assert isinstance(config.mode_config, WatcherModeConfig)
                 logger.info(
                     f"Watcher mode - monitoring {len(config.mode_config.watch_addresses)} address(es) for interactions"
@@ -242,7 +261,9 @@ class HeaderOracle:
             logger.error(f"Exception type: {type(e).__name__}", exc_info=True)
             raise
 
-    async def fetch_block_by_number(self, block_number: int) -> BlockData | None:
+    async def fetch_block_by_number(
+        self, block_number: int
+    ) -> BlockData | None:
         """
         Fetch a specific block by number from the source chain with retry logic.
 
@@ -356,19 +377,19 @@ class HeaderOracle:
                     next_block_to_push = last_stored_block + 1
                     end_block = min(latest_block_number, last_stored_block + 20)
 
-                # Collect blocks to submit in batch
                 block_numbers = []
                 block_hashes = []
 
                 for block_num in range(next_block_to_push, end_block + 1):
-                    logger.info(f"Fetching block {block_num} for batch submission")
+                    logger.info(
+                        f"Fetching block {block_num} for batch submission"
+                    )
                     block = await self.fetch_block_by_number(block_num)
 
                     if block:
                         block_hash = block.get("hash")
 
                         if block_hash is not None:
-                            # Convert block_hash to hex string with 0x prefix
                             block_hash_hex = (
                                 block_hash.hex()
                                 if isinstance(block_hash, bytes)
@@ -386,13 +407,14 @@ class HeaderOracle:
                         logger.error(f"Could not fetch block {block_num}")
                         break
 
-                # Submit all blocks in a single batch transaction
                 if block_numbers:
                     logger.info(
                         f"Submitting batch of {len(block_numbers)} blocks: {block_numbers[0]} to {block_numbers[-1]}"
                     )
-                    success = await self.block_submitter.submit_block_headers_batch(
-                        block_numbers, block_hashes
+                    success = (
+                        await self.block_submitter.submit_block_headers_batch(
+                            block_numbers, block_hashes
+                        )
                     )
 
                     if success:
@@ -425,18 +447,18 @@ class HeaderOracle:
             last_processed_block: int | None = None
 
             if self.last_scanned_block is not None:
-                # Normal operation: continue from last scanned position
                 start_block = self.last_scanned_block + 1
                 last_processed_block = self.last_scanned_block
             else:
-                # First run or restart: check target chain for recovery
                 last_stored_block = (
                     await self.block_submitter.get_latest_block_number()
                 )
                 if last_stored_block is not None and last_stored_block > 0:
                     start_block = last_stored_block + 1
                     last_processed_block = last_stored_block
-                    logger.info(f"Resuming from last stored block {last_stored_block}")
+                    logger.info(
+                        f"Resuming from last stored block {last_stored_block}"
+                    )
                 else:
                     start_block = max(
                         0,
@@ -444,7 +466,6 @@ class HeaderOracle:
                         - self.config.mode_config.lookback_blocks,
                     )
 
-            # Don't scan too far ahead - use configured batch size
             batch_size = self.config.mode_config.batch_size
             end_block = min(latest_block_number, start_block + batch_size - 1)
 
@@ -459,15 +480,17 @@ class HeaderOracle:
                 f"Scanning {num_blocks} blocks ({start_block} to {end_block}) for watched address interactions"
             )
 
-            # Scan blocks for interactions with watched addresses
             blocks_with_interactions = []
             block_hashes_to_submit = []
-            last_successful_block = start_block - 1  # Track actual progress
+            last_successful_block = start_block - 1
 
             for block_number in range(start_block, end_block + 1):
-                # Log progress every 10 blocks
-                if (block_number - start_block) % 10 == 0 and block_number != start_block:
-                    logger.info(f"  Progress: scanned {block_number - start_block}/{num_blocks} blocks...")
+                if (
+                    block_number - start_block
+                ) % 10 == 0 and block_number != start_block:
+                    logger.info(
+                        f"  Progress: scanned {block_number - start_block}/{num_blocks} blocks..."
+                    )
 
                 try:
                     if await self._check_block_for_interactions(block_number):
@@ -475,12 +498,10 @@ class HeaderOracle:
                             f"Interaction detected in block {block_number}"
                         )
 
-                        # Fetch the block to get its hash
                         block = await self.fetch_block_by_number(block_number)
                         if block:
                             block_hash = block.get("hash")
                             if block_hash is not None:
-                                # Convert block_hash to hex string with 0x prefix
                                 block_hash_hex = (
                                     block_hash.hex()
                                     if isinstance(block_hash, bytes)
@@ -492,20 +513,21 @@ class HeaderOracle:
                                 blocks_with_interactions.append(block_number)
                                 block_hashes_to_submit.append(block_hash_hex)
                             else:
-                                logger.error(f"Block {block_number} has no hash, stopping scan")
-                                break  # Stop and retry this block next cycle
+                                logger.error(
+                                    f"Block {block_number} has no hash, stopping scan"
+                                )
+                                break
                         else:
-                            logger.error(f"Could not fetch block {block_number}, stopping scan")
-                            break  # Stop and retry this block next cycle
+                            logger.error(
+                                f"Could not fetch block {block_number}, stopping scan"
+                            )
+                            break
 
-                    # Block was successfully processed (scanned, and if interaction found, hash fetched)
                     last_successful_block = block_number
 
                 except Exception as e:
                     logger.error(f"Error processing block {block_number}: {e}")
-                    break  # Stop and retry this block next cycle
-
-            # Submit all blocks with interactions in a single batch
+                    break
             if blocks_with_interactions:
                 logger.info(
                     f"Submitting batch of {len(blocks_with_interactions)} blocks with interactions"
@@ -523,12 +545,13 @@ class HeaderOracle:
                         f"Failed to push batch of {len(blocks_with_interactions)} block headers"
                     )
 
-            # Update scan position to last successfully processed block
             if last_successful_block >= start_block:
                 self.last_scanned_block = last_successful_block
-
-            # Log summary
-            scanned_count = last_successful_block - start_block + 1 if last_successful_block >= start_block else 0
+            scanned_count = (
+                last_successful_block - start_block + 1
+                if last_successful_block >= start_block
+                else 0
+            )
             logger.info(
                 f"Scan complete: checked {scanned_count}/{num_blocks} blocks, found {len(blocks_with_interactions)} interaction(s)"
             )
@@ -550,8 +573,9 @@ class HeaderOracle:
         :return: True if interactions detected, False otherwise
         """
         try:
-            # Fetch block with full transaction details to avoid individual tx fetches
-            block = self.source_w3.eth.get_block(block_number, full_transactions=True)
+            block = self.source_w3.eth.get_block(
+                block_number, full_transactions=True
+            )
             if not block:
                 return False
 
@@ -561,7 +585,6 @@ class HeaderOracle:
                 self.config.mode_config.enable_internal_tx_detection
             )
 
-            # Since we fetched with full_transactions=True, transactions are full objects
             for tx in transactions:
                 if self._is_watched_transaction(tx):
                     tx_hash = tx.get("hash", "unknown")
@@ -570,7 +593,6 @@ class HeaderOracle:
                     )
                     return True
 
-                # Check internal transactions if enabled
                 if check_internal:
                     tx_hash = tx.get("hash")
                     if tx_hash:
@@ -579,9 +601,7 @@ class HeaderOracle:
                             if isinstance(tx_hash, bytes)
                             else tx_hash
                         )
-                        if await self._check_internal_transactions(
-                            tx_hash_str
-                        ):
+                        if await self._check_internal_transactions(tx_hash_str):
                             logger.debug(
                                 f"Found internal interaction in tx {tx_hash_str}"
                             )
@@ -675,6 +695,213 @@ class HeaderOracle:
 
         return False
 
+    async def watch_token_transfers(self) -> None:
+        try:
+            latest_block_number = self.source_w3.eth.block_number
+            assert isinstance(self.config.mode_config, TokenWatcherModeConfig)
+
+            if self.last_scanned_block is not None:
+                start_block = self.last_scanned_block + 1
+            else:
+                start_block = latest_block_number
+                logger.info(f"First run: starting from block {start_block}")
+
+            if start_block > latest_block_number:
+                return
+
+            end_block = min(start_block + 100, latest_block_number)
+            num_blocks = end_block - start_block + 1
+            logger.info(
+                f"Scanning {num_blocks} blocks ({start_block}-{end_block})"
+            )
+
+            blocks_with_transfers = set()
+
+            for token_addr in self.config.mode_config.token_addresses:
+                for recipient_addr in self.config.mode_config.recipient_addresses:
+                    recipient_topic = "0x" + recipient_addr[2:].lower().zfill(
+                        64
+                    )
+
+                    filter_params = {
+                        "fromBlock": hex(start_block),
+                        "toBlock": hex(end_block),
+                        "address": token_addr,
+                        "topics": [
+                            TRANSFER_EVENT_SIGNATURE,
+                            None,
+                            recipient_topic,
+                        ],
+                    }
+
+                    try:
+                        logs = self.source_w3.eth.get_logs(filter_params)
+
+                        for log in logs:
+                            tx_hash = log.get("transactionHash")
+                            block_num = log.get("blockNumber")
+
+                            if tx_hash and block_num:
+                                tx_hash_str = (
+                                    tx_hash.hex()
+                                    if isinstance(tx_hash, bytes)
+                                    else tx_hash
+                                )
+
+                                if tx_hash_str in self.processed_tx_hashes:
+                                    continue
+
+                                self.processed_tx_hashes.add(tx_hash_str)
+
+                                if (
+                                    len(self.processed_tx_hashes)
+                                    > self.max_tx_cache_size
+                                ):
+                                    to_remove = list(self.processed_tx_hashes)[
+                                        : self.max_tx_cache_size // 2
+                                    ]
+                                    self.processed_tx_hashes -= set(to_remove)
+
+                                blocks_with_transfers.add(block_num)
+                                logger.info(
+                                    f"Transfer: block={block_num}, tx={tx_hash_str}"
+                                )
+
+                    except Exception as e:
+                        logger.warning(
+                            f"Error querying logs for {token_addr}: {e}"
+                        )
+                        continue
+
+            if blocks_with_transfers:
+                block_hashes_to_submit = []
+                sorted_blocks = sorted(blocks_with_transfers)
+
+                for block_num in sorted_blocks:
+                    block = await self.fetch_block_by_number(block_num)
+                    if block and block.get("hash"):
+                        block_hash = block["hash"]
+                        block_hash_hex = (
+                            block_hash.hex()
+                            if isinstance(block_hash, bytes)
+                            else block_hash
+                        )
+                        if not block_hash_hex.startswith("0x"):
+                            block_hash_hex = "0x" + block_hash_hex
+                        block_hashes_to_submit.append(block_hash_hex)
+
+                if len(sorted_blocks) == len(block_hashes_to_submit):
+                    success = (
+                        await self.block_submitter.submit_block_headers_batch(
+                            sorted_blocks, block_hashes_to_submit
+                        )
+                    )
+                    if success:
+                        logger.info(
+                            f"Submitted {len(sorted_blocks)} block headers"
+                        )
+
+            self.last_scanned_block = end_block
+            logger.info(
+                f"Scan complete: {len(blocks_with_transfers)} transfer(s) in {num_blocks} blocks"
+            )
+
+        except Exception as e:
+            logger.error(f"Error in token watcher: {e}", exc_info=True)
+
+    async def _check_block_for_token_transfers(self, block_number: int) -> bool:
+        try:
+            block = self.source_w3.eth.get_block(block_number)
+            if not block:
+                return False
+
+            tx_hashes = block.get("transactions", [])
+            if not tx_hashes:
+                return False
+
+            for tx_hash in tx_hashes:
+                try:
+                    tx = self.source_w3.eth.get_transaction(tx_hash)
+                    if not tx:
+                        continue
+
+                    tx_to = tx.get("to", "")
+                    if not tx_to or tx_to.lower() not in self.token_addresses:
+                        continue
+
+                    receipt = self.source_w3.eth.get_transaction_receipt(
+                        tx_hash
+                    )
+                    if not receipt:
+                        continue
+
+                    for log in receipt.get("logs", []):
+                        if (
+                            log.get("address", "").lower()
+                            not in self.token_addresses
+                        ):
+                            continue
+
+                        topics = log.get("topics", [])
+                        if len(topics) < 3:
+                            continue
+
+                        event_sig = (
+                            topics[0].hex()
+                            if isinstance(topics[0], bytes)
+                            else topics[0]
+                        )
+                        if (
+                            event_sig.lower()
+                            != TRANSFER_EVENT_SIGNATURE.lower()
+                        ):
+                            continue
+
+                        to_address_topic = topics[2]
+                        to_address_hex = (
+                            to_address_topic.hex()
+                            if isinstance(to_address_topic, bytes)
+                            else to_address_topic
+                        )
+                        if to_address_hex.startswith("0x"):
+                            to_address_hex = to_address_hex[2:]
+                        to_address = "0x" + to_address_hex[-40:]
+
+                        if to_address.lower() in self.recipient_addresses:
+                            tx_hash_str = (
+                                tx_hash.hex()
+                                if isinstance(tx_hash, bytes)
+                                else tx_hash
+                            )
+                            if tx_hash_str in self.processed_tx_hashes:
+                                continue
+
+                            self.processed_tx_hashes.add(tx_hash_str)
+
+                            if (
+                                len(self.processed_tx_hashes)
+                                > self.max_tx_cache_size
+                            ):
+                                to_remove = list(self.processed_tx_hashes)[
+                                    : self.max_tx_cache_size // 2
+                                ]
+                                self.processed_tx_hashes -= set(to_remove)
+
+                            token_addr = log.get("address", "unknown")
+                            logger.info(
+                                f"Transfer detected: token={token_addr}, to={to_address}, tx={tx_hash_str}"
+                            )
+                            return True
+
+                except Exception:
+                    continue
+
+            return False
+
+        except Exception as e:
+            logger.warning(f"Skipping block {block_number}: {e}")
+            return False
+
     async def shutdown(self) -> None:
         """Gracefully shutdown the oracle."""
         logger.info("Shutting down HeaderOracle...")
@@ -687,7 +914,7 @@ class HeaderOracle:
     async def run(self) -> None:
         """
         Main entry point for the HeaderOracle.
-        Starts event polling, push mode, or watcher mode based on configuration.
+        Starts event polling, push mode, watcher mode, or token watcher mode based on configuration.
         """
         logger.info("Starting HeaderOracle...")
 
@@ -699,7 +926,16 @@ class HeaderOracle:
                     "Health check server running on http://0.0.0.0:8080/health"
                 )
 
-            if self.config.oracle_mode == OracleMode.WATCHER:
+            if self.config.oracle_mode == OracleMode.TOKEN_WATCHER:
+                assert isinstance(
+                    self.config.mode_config, TokenWatcherModeConfig
+                )
+                logger.info(
+                    f"Running in token watcher mode - monitoring {len(self.config.mode_config.token_addresses)} token(s) "
+                    f"for transfers to {len(self.config.mode_config.recipient_addresses)} recipient(s)"
+                )
+                await self._run_token_watcher_mode()
+            elif self.config.oracle_mode == OracleMode.WATCHER:
                 assert isinstance(self.config.mode_config, WatcherModeConfig)
                 logger.info(
                     f"Running in watcher mode - monitoring {len(self.config.mode_config.watch_addresses)} address(es)"
@@ -732,7 +968,6 @@ class HeaderOracle:
                 f"Starting push oracle with {self.config.mode_config.push_interval} second interval..."
             )
 
-            # Main push loop
             while True:
                 await self.push_latest_block_header()
                 await sleep(self.config.mode_config.push_interval)
@@ -764,6 +999,25 @@ class HeaderOracle:
         finally:
             logger.info("Watcher stopped")
 
+    async def _run_token_watcher_mode(self) -> None:
+        """Run in token watcher mode - continuously scan for ERC20 token transfers."""
+        try:
+            assert isinstance(self.config.mode_config, TokenWatcherModeConfig)
+            logger.info(
+                f"Starting token watcher with {self.config.mode_config.scan_interval} second interval..."
+            )
+
+            while True:
+                await self.watch_token_transfers()
+                await sleep(self.config.mode_config.scan_interval)
+
+        except KeyboardInterrupt:
+            logger.info("Token watcher interrupted")
+        except Exception as e:
+            logger.error(f"Error in token watcher loop: {e}", exc_info=True)
+        finally:
+            logger.info("Token watcher stopped")
+
     async def _run_event_listener_mode(self) -> None:
         """Run in event listener mode - poll for BlockHeaderRequested events."""
         try:
@@ -772,7 +1026,6 @@ class HeaderOracle:
                 f"Starting polling event listener with {self.config.mode_config.polling_interval} second interval..."
             )
 
-            # Start event polling (this will run indefinitely)
             await self.event_listener.start_polling(
                 callback=self.process_block_header_event,
                 interval=self.config.mode_config.polling_interval,

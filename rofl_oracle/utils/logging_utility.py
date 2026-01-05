@@ -78,6 +78,13 @@ def setup_structured_logging(
     root_logger.handlers.clear()
     root_logger.addHandler(handler)
 
+    logging.getLogger("web3").setLevel(logging.WARNING)
+    logging.getLogger("web3.providers").setLevel(logging.WARNING)
+    logging.getLogger("web3.RequestManager").setLevel(logging.WARNING)
+    logging.getLogger("web3.manager").setLevel(logging.WARNING)
+    logging.getLogger("web3._utils").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+
 
 def timed[T](func: Callable[..., T]) -> Callable[..., T]:
     """Decorator to time function execution and log performance.
