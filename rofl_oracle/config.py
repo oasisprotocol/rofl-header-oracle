@@ -202,11 +202,13 @@ class TokenWatcherModeConfig:
     :cvar token_addresses: List of ERC20 token contract addresses to monitor (env: TOKEN_ADDRESSES, comma-separated)
     :cvar recipient_addresses: List of recipient addresses to watch for (env: RECIPIENT_ADDRESSES, comma-separated)
     :cvar scan_interval: Seconds between scanning for token transfers (env: SCAN_INTERVAL)
+    :cvar max_blocks_per_scan: Maximum number of blocks to scan per iteration (env: MAX_BLOCKS_PER_SCAN, default: 10)
     """
 
     token_addresses: list[str]
     recipient_addresses: list[str]
     scan_interval: int
+    max_blocks_per_scan: int = 10
 
     def __post_init__(self) -> None:
         """Validate token watcher configuration."""
@@ -217,6 +219,15 @@ class TokenWatcherModeConfig:
         if self.scan_interval > 300:
             raise ValueError(
                 f"Scan interval too long (max 300s), got {self.scan_interval}"
+            )
+
+        if self.max_blocks_per_scan <= 0:
+            raise ValueError(
+                f"Max blocks per scan must be positive, got {self.max_blocks_per_scan}"
+            )
+        if self.max_blocks_per_scan > 10000:
+            raise ValueError(
+                f"Max blocks per scan too high (max 10000), got {self.max_blocks_per_scan}"
             )
 
         if not self.token_addresses or len(self.token_addresses) == 0:

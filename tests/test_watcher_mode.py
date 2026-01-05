@@ -1280,6 +1280,15 @@ class TestTokenWatcherMode:
         assert len(config.token_addresses) == 1
         assert len(config.recipient_addresses) == 1
         assert config.scan_interval == 60
+        assert config.max_blocks_per_scan == 10
+
+        config_custom_blocks = TokenWatcherModeConfig(
+            token_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"],
+            recipient_addresses=["0xabcdef0123456789abcdef0123456789abcdef01"],
+            scan_interval=60,
+            max_blocks_per_scan=50,
+        )
+        assert config_custom_blocks.max_blocks_per_scan == 50
 
         with pytest.raises(ValueError, match="Invalid token address"):
             TokenWatcherModeConfig(
@@ -1317,6 +1326,28 @@ class TestTokenWatcherMode:
                 token_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"],
                 recipient_addresses=[],
                 scan_interval=60,
+            )
+
+        with pytest.raises(
+            ValueError, match="Max blocks per scan must be positive"
+        ):
+            TokenWatcherModeConfig(
+                token_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"],
+                recipient_addresses=[
+                    "0xabcdef0123456789abcdef0123456789abcdef01"
+                ],
+                scan_interval=60,
+                max_blocks_per_scan=0,
+            )
+
+        with pytest.raises(ValueError, match="Max blocks per scan too high"):
+            TokenWatcherModeConfig(
+                token_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"],
+                recipient_addresses=[
+                    "0xabcdef0123456789abcdef0123456789abcdef01"
+                ],
+                scan_interval=60,
+                max_blocks_per_scan=20000,
             )
 
     @pytest.mark.asyncio

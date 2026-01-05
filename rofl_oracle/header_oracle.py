@@ -709,7 +709,10 @@ class HeaderOracle:
             if start_block > latest_block_number:
                 return
 
-            end_block = min(start_block + 100, latest_block_number)
+            end_block = min(
+                start_block + self.config.mode_config.max_blocks_per_scan,
+                latest_block_number,
+            )
             num_blocks = end_block - start_block + 1
             logger.info(
                 f"Scanning {num_blocks} blocks ({start_block}-{end_block})"
