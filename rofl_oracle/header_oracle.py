@@ -580,6 +580,13 @@ class HeaderOracle:
                 # Always update timer, avoid retry storm for non-critical block
                 self.last_heartbeat_time = time.time()
 
+            elif heartbeat_due:
+                # Heartbeat due but scan failed before processing any blocks
+                logger.warning(
+                    "Heartbeat due but scan failed before processing any blocks"
+                )
+                self.last_heartbeat_time = time.time()
+
             # Update scan position to last successfully processed block
             if last_successful_block >= start_block:
                 self.last_scanned_block = last_successful_block
