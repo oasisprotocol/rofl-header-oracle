@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ghcr.io/rube-de/rofl-header-oracle:latest
+    image: ghcr.io/oasisprotocol/rofl-header-oracle:latest
     platform: linux/amd64
     container_name: rofl_header_oracle
     entrypoint: /bin/sh -c 'uv run python -m rofl_oracle --local'
