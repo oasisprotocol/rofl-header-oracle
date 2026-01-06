@@ -321,18 +321,9 @@ class HeaderOracle:
                 block = await self.fetch_block_by_number(event.block_number)
 
                 if block:
-                    block_hash = block.get("hash")
+                    block_hash_hex = self._normalize_block_hash(block.get("hash"))
 
-                    if block_hash is not None:
-                        # Convert block_hash to hex string with 0x prefix
-                        block_hash_hex = (
-                            block_hash.hex()
-                            if isinstance(block_hash, bytes)
-                            else block_hash
-                        )
-                        if not block_hash_hex.startswith("0x"):
-                            block_hash_hex = "0x" + block_hash_hex
-
+                    if block_hash_hex is not None:
                         # Submit the block header using BlockSubmitter
                         success = (
                             await self.block_submitter.submit_block_header(
@@ -391,17 +382,11 @@ class HeaderOracle:
                     block = await self.fetch_block_by_number(block_num)
 
                     if block:
-                        block_hash = block.get("hash")
+                        block_hash_hex = self._normalize_block_hash(
+                            block.get("hash")
+                        )
 
-                        if block_hash is not None:
-                            block_hash_hex = (
-                                block_hash.hex()
-                                if isinstance(block_hash, bytes)
-                                else block_hash
-                            )
-                            if not block_hash_hex.startswith("0x"):
-                                block_hash_hex = "0x" + block_hash_hex
-
+                        if block_hash_hex is not None:
                             block_numbers.append(block_num)
                             block_hashes.append(block_hash_hex)
                         else:
@@ -515,16 +500,10 @@ class HeaderOracle:
 
                         block = await self.fetch_block_by_number(block_number)
                         if block:
-                            block_hash = block.get("hash")
-                            if block_hash is not None:
-                                block_hash_hex = (
-                                    block_hash.hex()
-                                    if isinstance(block_hash, bytes)
-                                    else block_hash
-                                )
-                                if not block_hash_hex.startswith("0x"):
-                                    block_hash_hex = "0x" + block_hash_hex
-
+                            block_hash_hex = self._normalize_block_hash(
+                                block.get("hash")
+                            )
+                            if block_hash_hex is not None:
                                 blocks_with_interactions.append(block_number)
                                 block_hashes_to_submit.append(block_hash_hex)
                             else:
@@ -575,16 +554,8 @@ class HeaderOracle:
                 # Fetch the block to get its hash
                 block = await self.fetch_block_by_number(heartbeat_block)
                 if block:
-                    block_hash = block.get("hash")
-                    if block_hash is not None:
-                        block_hash_hex = (
-                            block_hash.hex()
-                            if isinstance(block_hash, bytes)
-                            else block_hash
-                        )
-                        if not block_hash_hex.startswith("0x"):
-                            block_hash_hex = "0x" + block_hash_hex
-
+                    block_hash_hex = self._normalize_block_hash(block.get("hash"))
+                    if block_hash_hex is not None:
                         success = await self.block_submitter.submit_block_header(
                             heartbeat_block, block_hash_hex
                         )
@@ -669,6 +640,18 @@ class HeaderOracle:
                 f"Error checking block {block_number} for interactions: {e}"
             )
             return False
+
+    def _normalize_block_hash(self, block_hash: bytes | str | None) -> str | None:
+        """
+        Normalize block hash to hex string with 0x prefix.
+
+        :param block_hash: Block hash as bytes, hex string, or None
+        :return: Normalized hex string with 0x prefix, or None if input is None
+        """
+        if block_hash is None:
+            return None
+        hex_str = block_hash.hex() if isinstance(block_hash, bytes) else block_hash
+        return hex_str if hex_str.startswith("0x") else f"0x{hex_str}"
 
     def _is_watched_transaction(self, tx: Any) -> bool:
         """
@@ -840,16 +823,12 @@ class HeaderOracle:
 
                 for block_num in sorted_blocks:
                     block = await self.fetch_block_by_number(block_num)
-                    if block and block.get("hash"):
-                        block_hash = block["hash"]
-                        block_hash_hex = (
-                            block_hash.hex()
-                            if isinstance(block_hash, bytes)
-                            else block_hash
+                    if block:
+                        block_hash_hex = self._normalize_block_hash(
+                            block.get("hash")
                         )
-                        if not block_hash_hex.startswith("0x"):
-                            block_hash_hex = "0x" + block_hash_hex
-                        block_hashes_to_submit.append(block_hash_hex)
+                        if block_hash_hex:
+                            block_hashes_to_submit.append(block_hash_hex)
 
                 if len(sorted_blocks) == len(block_hashes_to_submit):
                     success = (
