@@ -564,11 +564,21 @@ class HeaderOracle:
                             logger.info(
                                 f"Heartbeat: stored block {heartbeat_block} as checkpoint"
                             )
-                            self.last_heartbeat_time = time.time()
                         else:
-                            logger.error(
-                                f"Failed to submit heartbeat block {heartbeat_block}"
+                            logger.warning(
+                                f"Heartbeat submission failed for block {heartbeat_block}"
                             )
+                    else:
+                        logger.warning(
+                            f"Heartbeat block {heartbeat_block} has no hash"
+                        )
+                else:
+                    logger.warning(
+                        f"Could not fetch heartbeat block {heartbeat_block}"
+                    )
+
+                # Always update timer, avoid retry storm for non-critical block
+                self.last_heartbeat_time = time.time()
 
             # Update scan position to last successfully processed block
             if last_successful_block >= start_block:
