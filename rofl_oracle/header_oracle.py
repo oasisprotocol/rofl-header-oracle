@@ -545,7 +545,6 @@ class HeaderOracle:
                     break  # Stop and retry this block next cycle
 
             # Submit all blocks with interactions in a single batch
-            submission_success = False
             if blocks_with_interactions:
                 logger.info(
                     f"Submitting batch of {len(blocks_with_interactions)} blocks with interactions"
@@ -558,7 +557,6 @@ class HeaderOracle:
                     logger.info(
                         f"Successfully pushed {len(blocks_with_interactions)} block headers with interactions"
                     )
-                    submission_success = True
                     # Reset heartbeat timer on successful activity submission
                     self.last_heartbeat_time = time.time()
                 else:
@@ -595,7 +593,6 @@ class HeaderOracle:
                             logger.info(
                                 f"Heartbeat: stored block {heartbeat_block} as checkpoint"
                             )
-                            submission_success = True
                             self.last_heartbeat_time = time.time()
                         else:
                             logger.error(
