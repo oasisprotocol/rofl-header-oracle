@@ -3,11 +3,11 @@ version: 0.1.0
 tee: tdx
 kind: container
 resources:
-  memory: 4096
-  cpus: 2
+  memory: 2048
+  cpus: 1
   storage:
     kind: disk-persistent
-    size: 10000
+    size: 1000
 artifacts:
   firmware: https://github.com/oasisprotocol/oasis-boot/releases/download/v0.6.2/ovmf.tdx.fd#db47100a7d6a0c1f6983be224137c3f8d7cb09b63bb1c7a5ee7829d8e994a42f
   kernel: https://github.com/oasisprotocol/oasis-boot/releases/download/v0.6.2/stage1.bin#e5d4d654ca1fa2c388bf64b23fc6e67815893fc7cb8b7cfee253d87963f54973
@@ -17,13 +17,14 @@ artifacts:
     compose: compose.yaml
 deployments:
   default:
-    app_id: rofl1qrct2u3sap98mx462lzwy7za86ajgaaxkvs79x88
-    network: testnet
+    app_id: rofl1qz5h592w87uyftlrht388g3rkf58s5z7n53w5xh0
+    network: mainnet
     paratime: sapphire
-    admin: myaccount
+    admin: paymaster
+    oci_repository: rofl.sh/a49767f8-f27b-4f03-ae78-f30171bcbbd2:1765396217
     trust_root:
-      height: 29520076
-      hash: f00ebd495ebcebe0c19832974f65e75fce5a2a6eca3569691ca5a7b83c27f862
+      height: 27683851
+      hash: 32de51c51980859a16a593943c3db853d1e387e80c5b65c4370a8897826479dd
     policy:
       quotes:
         pcs:
@@ -31,36 +32,41 @@ deployments:
           min_tcb_evaluation_data_number: 18
           tdx: {}
       enclaves:
-        - id: wxQAwRK/Jm7eKBMMjyHEAXbjchiZsIz5TQ7PzRs0nuAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
-        - id: uUkpAYcj6nScA4HdXKRGPruq3aYuua6Eh/uGeOQoQCwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
+        - id: 47YJdKGT4gRY5UvJEiv3Y/u/SAaS+7Dw8plcH/xntV4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
+        - id: mbii+uP+Xqyf1xl72lJ0m1/GHcE418NeWWkTbXDDpAsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
       endorsements:
         - any: {}
       fees: endorsing_node
       max_expiration: 3
     secrets:
       - name: ENABLE_INTERNAL_TX_DETECTION
-        value: pGJwa1ggK+IfpbNPVRCG0LCLlzuRXIaY/ch2EeGJRcLqaQQTnEdkbmFtZVgsMVwyL/5/4+rl1XafBmFWMOqkZK0WP1se4lCBM1lkliHDgEw1hwWVhXIf9tllbm9uY2VPcONjIAKQ1Utud6BFptNlZXZhbHVlVT7l6K+wW3PmoX3407mM+MoBC4ZxSw==
+        value: pGJwa1ggk7KPIsfxOTlkY/JgSrT2St+srjsvapD4mkzFauo+fRdkbmFtZVgsS5M1T3fwHcV9i5BZDEeaT6zhObtWj/VU4Ix2svHnyJ81aoS40zLDC/XquUZlbm9uY2VPKdKGk8AqhrJcafGT229jZXZhbHVlVafQZn9qGFWcNzxLmo88tcn8jxWzWQ==
       - name: JSON_LOGS
-        value: pGJwa1ggFfR70IpOjGiRAExTXgD9lgoHEd81+bneP6bzyHY+zBBkbmFtZVgZwaAr0mabOA0lYdLaHEsVEAYJepHXLjQZCWVub25jZU9ovA0XhUAsowlfJe/z0UBldmFsdWVVj0gi3i2aeTOiKpGcLxEyps6TjG7h
+        value: pGJwa1ggzHmwyRNNcgKjjexA1E7VygpEExKOtXzDg0Wa5+acTnZkbmFtZVgZB55Jsvv6Jr6Mn+xvGMp1QYczfDRyZ7Uu8GVub25jZU9CXDWuX/OBgk0vZLzpnxJldmFsdWVV9PHLlI8QHogIlg5BXW7HN53D+CPS
       - name: LOG_LEVEL
-        value: pGJwa1ggfzB2xxUZx6oLGQHRF67hbhG6EkHjVb5ypjHfRYAuiyBkbmFtZVgZKsLNUSSV8z1p4gib5sCLapKOHbN7nSJ422Vub25jZU+GlIoIOrJh/uTJu+54tatldmFsdWVUYbHULbpFMUOuRSUNnC/+anHTRSg=
+        value: pGJwa1ggC3PoxrjwrdjjEa3hBBM/1df+CeaU55zKoNbPqtGykjZkbmFtZVgZXeP52bWz/NYUDZCx9ZlwLrCI2T+Dt7iQTWVub25jZU+1rNIcpCxoVirE9Ach2hpldmFsdWVUzUPRVi4a1WYgtzQ5rkXN/L5CWQY=
       - name: LOOKBACK_BLOCKS
-        value: pGJwa1ggFc9JYiw7mF1Rgencr5qK6RfXB+mI2vrYi/tV27nboi9kbmFtZVgfoM+/XwmEW/Gt/zdJqkDTtmU/VyrDvzqjzQuEvqBZy2Vub25jZU/BkD9qj5FF4jGR/9GsFdVldmFsdWVR5e9W2emyip1qYLVHT7o1oyg=
+        value: pGJwa1gg45kGrmd+Tdv0BhQBeeuJ2WvkUdP68S7Fjav7FOisJBtkbmFtZVgfK+yFlLgRnycTSTsZWc0xC4JV/SbdCILj9urgt2fSTGVub25jZU96ItbiIpDbXnTCZR1nSF5ldmFsdWVREoXW9O6Nlku/8qQyDkFJSMY=
       - name: ORACLE_MODE
-        value: pGJwa1ggTuTbTmL8zZ2JUZruYFU7MSWbNGNp4VIBlwFFx7PKyD9kbmFtZVgb9do0QKbQXRiy2jGV4Iy6lTjTEn4itFU3cJAAZW5vbmNlT/HXUkNyOBFtwAM/mmqUhGV2YWx1ZVfxRyn1GQINE9hkPCJg9JjrZTSng4DjHw==
+        value: pGJwa1ggfXQs0d0eB0cZhEG0ctDAL0jZhfIclPAFtsz6iLJJGnpkbmFtZVgbdPRxl3TWlkd9HesGKg3TXFXdfd54fG4bqcVLZW5vbmNlT7MYNSrElCAXGRKGIInqK2V2YWx1ZVcgKhDazH6z9VPuTs6tROTXrO3Pqeo0UQ==
       - name: REQUEST_TIMEOUT
-        value: pGJwa1gge9KJvKXzD/I8DHHTzG3XuAvAIwDCfu5pUo6rJrlnQiBkbmFtZVgfuRpEc9qbApXT0rCBvgAWDBq3/2WC0xIPdF3RjYOfImVub25jZU/Ebv7u8E2l++QoTlqyeM1ldmFsdWVS6Kj95a2/B5eUX6lR/NzQztkN
+        value: pGJwa1ggvT5icjVaRr1I/ACekONMltplpylNn90OB1gQB5jTyQpkbmFtZVgfNVa8sEWZR5G6UvIf89zmsgJICcCnv5GJkdOXivY752Vub25jZU8vcQmNPfD9793FgIGpPvBldmFsdWVSOPOXTZG8NI2s2O/tb086S2J7
       - name: RETRY_COUNT
-        value: pGJwa1ggTXAHArzApCiF3PYq4xnmgcyjhMas845ymOY+aalcz0NkbmFtZVgbijvcsZD2btb2Om5UmYgKutbv192JVxeeJ/mjZW5vbmNlT2c/DO25OiywnqwNH5Bm82V2YWx1ZVF7LPF2HN+AmIWDBYAEKGr7HQ==
+        value: pGJwa1ggWsQ0rDhTg7yJygE1Tai4k9RgfrkXJxdwwBPhaCk03j5kbmFtZVgbzcHhLCdCu0tq2JRJDJ2uzM+6neIqHrNRPnRnZW5vbmNlTwIfTafuMVF5mGcT2JQ7UmV2YWx1ZVFnWh7KARGIyT8kk0X9CRWnLQ==
       - name: ROFL_ADAPTER_ADDRESS
-        value: pGJwa1ggqKgjI8Kl85oW3VhgJiqoPxym1h992J6MlX3aHX4NwmJkbmFtZVgkG6nDSpxZ7Cl7k3CEGrtH2ZYKxy4Wu0a9HL3PNBlforz7WiRsZW5vbmNlTz8VZHb48XOpzd/nRJUEvWV2YWx1ZVg6ycPBTgyTJR8C0fVV8822waJVl6ax6rEFnI7d3Sops9cFj/b9xjUncT+FlyFFS/NFjciL0grWrQaiPw==
+        value: pGJwa1ggmQbQpe53XKCSCUGu8YDRAquQiXrOg9Ig/Wfex89++RVkbmFtZVgk8W2oNqB5S9YLCxzh6PUvrYNZttU/jEOITT0BNND1qKKbuDZfZW5vbmNlT1pN1NPbzo1EUjL30B9eVmV2YWx1ZVg60rp66OXmYj8TrejJ1SMV4reBiltpzqN0gCvInj05C+5v/kTxtgzjcazvKIYzGwwKmX9iVp7zKxJM1w==
       - name: SCAN_INTERVAL
-        value: pGJwa1gggX/Ve+bFd4+Sw43elSNMAQtSZKMHCGmO8wn3gEq7p15kbmFtZVgdFzkI3p8FHJWNbuoo8Uojta8ZrcA7pkFVATDSZX9lbm9uY2VPIr1d3zI+uS3iAP7D+gEpZXZhbHVlUnYy1Kla9cnpKFj8fJG2LTuWWA==
+        value: pGJwa1ggAAqxCmS4DLcc8Q8nilt0DHhGGKrJelT2Squ1Lu24LAhkbmFtZVgds7BZ7nyL4KGzhAtL+fHOHujrRNZjOb4iN23PF9Zlbm9uY2VPUEhz+WfBbn1HJkwcsVWuZXZhbHVlUkPDS+/sTvmAJx6h+tpn2Dq5rQ==
       - name: SOURCE_RPC_URL
-        value: pGJwa1gg0+OwPX8U8xq+kD47OE+MWlwwd9nWkEKrAsMqWn2dIzdkbmFtZVgeJfMMdxSJ0uWcD4WL9IB6gkkI3RodT8hpC4Iie2s6ZW5vbmNlT51PCs1G+B2xV+TrCSrbymV2YWx1ZVhVi1ZnKCRguLNQ4qlGzKDaBD/cJOagISlfzFIF5oQUVYdDlFQPn6QmNu0zZa1geOiL0V7Q9MUAX851tpsUUOMSPEgdNY5FD0xlAYNNdCsydASKMZDetA==
+        value: pGJwa1gg0My+HGbGtvLIJ8e9r6VrEqc7TClTEKWtKhFXo9tCljxkbmFtZVgeQkkoOlv07LS78RP3Kzd/bQCyC7+/HUg4YcHxMoueZW5vbmNlT6SeYcf2KAo5mRa5hL+TQWV2YWx1ZVhWVJ69/WY333tehDyi8LGBxkANzsoHzEC6DoWp8ETl+qm8ZiZLzriOjwkdmx0ZLnm8qUC7+CojVTXVw8jKyUAYdGJEsIy9D4sIHz9MnDvCdQnIauIk0C8=
       - name: TARGET_RPC_URL
-        value: pGJwa1ggrya4WQJPZ87rxIGO7AB4j98huInSdGDq8HMJxwcKYSdkbmFtZVgex7Zh+5jSMfw9ZH2XcJZHJ6vg8WwgMdfjOkLnLJnYZW5vbmNlT4nK+3sqbfy5G0HmPIABPWV2YWx1ZVgx/v1H1n8Tt6T/IBJbRcg2PDfZAC0GmCLHI58t4s9jMNH6ZQJHkGNOvOWZjxQXMfGl9Q==
+        value: pGJwa1ggfznY/mDYqJ9xwryNqBdRYzajW4/NmTBtVDfvVu0cGypkbmFtZVgeRPAJtHyXcIZFg60fhL9yldG4r6uUMGTqJXH905PSZW5vbmNlT0MeKeQYd7kgDSRNO58q5mV2YWx1ZVgpE52YefI30MF8DWM/VFAsVCwznJq2gJndbMW0SqrsSvQvp/UzZRWlC/U=
       - name: WATCHER_BATCH_SIZE
-        value: pGJwa1gg9/kr4FnMFLwewmK7uCWqg2sSkuUXpfylFHzGhkBC9wtkbmFtZVgigbBwaiSqqKbyW5l3DaccI3s4jLuYz2YpKCaARnFKrgg2t2Vub25jZU8HkOq+FA7MDHbDP9maJrlldmFsdWVS2Rr/wszulJr7+zMwUjLZll6F
+        value: pGJwa1ggNMYXQVK2cU8NMwCdMt3aPklR0ewiwF5hhsTrAuoiKG5kbmFtZVgi2OGAAev1bjY4l40NZMAfxp2DGvlurXZVmpK93HxcwI0EEGVub25jZU9S/SPrStTmTNxvErfrBwhldmFsdWVS2F87LYCvd21wRCwzukL+TK2Z
       - name: WATCH_ADDRESSES
-        value: pGJwa1ggRamOhTxrYRIFGxWYcs61dC0f9aNDLwLHga8DqjT3omJkbmFtZVgfctENMjOPmoNG5v80FE1vO1TVuix1iB43ZVhaN/+eH2Vub25jZU8on45PiEHvWgAv45IUOGJldmFsdWVYOtEpkjuW1fWOUwvGF7FDmJvZMQRNufT9dQEGKVSpnI/W4plaN5biWCblp397JSFGg+zlIEHNqATWT9c=
+        value: pGJwa1ggnFJoaPX8iHlldespD8/6JvjqA0Eao3+WzpKaB8jKdWlkbmFtZVgfQX/PI6ED+ZhkTVlU9n9p83+NJagfBRk7IqDIOtXWAmVub25jZU8L+rdkWLUUVJmMz3uIRH9ldmFsdWVYOq9t+Z1h7BIEU71gFXuguXMrcNDQlqgCDBubIDnYTQBU3YVOG/CjRzEH+GwkZkABmEp4uJcJkG7mgt0=
+    machines:
+      default:
+        provider: oasis1qzc8pldvm8vm3duvdrj63wgvkw34y9ucfcxzetqr
+        offer: medium
+        id: 000000000000006a

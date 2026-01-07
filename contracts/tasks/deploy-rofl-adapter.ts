@@ -25,12 +25,14 @@ export const deployRoflAdapter = task("deploy:rofl-adapter", "Deploy the ROFLAda
   .addOption({
     name: "roflAppId",
     description: "ROFL app ID in bech32 format (e.g., rofl1qrct2u3sap98mx462lzwy7za86ajgaaxkvs79x88)",
-    defaultValue: "rofl1qrct2u3sap98mx462lzwy7za86ajgaaxkvs79x88",
+    defaultValue: "rofl1qz5h592w87uyftlrht388g3rkf58s5z7n53w5xh0", // mainnet
+    // defaultValue: "rofl1qrct2u3sap98mx462lzwy7za86ajgaaxkvs79x88", // testnet
   })
   .addOption({
     name: "sourceChainId",
     description: "Chain ID of the source chain (e.g., 11155111 for Sepolia)",
-    defaultValue: "11155111",
+    defaultValue: "8453", // base
+    // defaultValue: "11155111", // sepolia
   })
   .addFlag({
     name: "verify",

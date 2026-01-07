@@ -1,4 +1,5 @@
 import logging
+import time
 from asyncio import sleep
 from typing import Any
 
@@ -237,6 +238,9 @@ class HeaderOracle:
                 # - Ensures no blocks are permanently skipped even if process crashes
                 # - Trades potential re-scanning for data integrity
                 self.last_scanned_block: int | None = None
+                # Heartbeat tracking for periodic checkpoint submissions
+                # Ensures sync time is bounded even without watched address activity
+                self.last_heartbeat_time: float | None = None
             elif config.oracle_mode == OracleMode.PUSH:
                 logger.info("Push oracle mode - will push latest block headers")
                 self.event_listener = None
@@ -317,18 +321,9 @@ class HeaderOracle:
                 block = await self.fetch_block_by_number(event.block_number)
 
                 if block:
-                    block_hash = block.get("hash")
+                    block_hash_hex = self._normalize_block_hash(block.get("hash"))
 
-                    if block_hash is not None:
-                        # Convert block_hash to hex string with 0x prefix
-                        block_hash_hex = (
-                            block_hash.hex()
-                            if isinstance(block_hash, bytes)
-                            else block_hash
-                        )
-                        if not block_hash_hex.startswith("0x"):
-                            block_hash_hex = "0x" + block_hash_hex
-
+                    if block_hash_hex is not None:
                         # Submit the block header using BlockSubmitter
                         success = (
                             await self.block_submitter.submit_block_header(
@@ -387,17 +382,11 @@ class HeaderOracle:
                     block = await self.fetch_block_by_number(block_num)
 
                     if block:
-                        block_hash = block.get("hash")
+                        block_hash_hex = self._normalize_block_hash(
+                            block.get("hash")
+                        )
 
-                        if block_hash is not None:
-                            block_hash_hex = (
-                                block_hash.hex()
-                                if isinstance(block_hash, bytes)
-                                else block_hash
-                            )
-                            if not block_hash_hex.startswith("0x"):
-                                block_hash_hex = "0x" + block_hash_hex
-
+                        if block_hash_hex is not None:
                             block_numbers.append(block_num)
                             block_hashes.append(block_hash_hex)
                         else:
@@ -436,11 +425,22 @@ class HeaderOracle:
         """
         Watch configured addresses for any interactions and push blocks when detected.
         Used in watcher mode.
+
+        Also submits periodic heartbeat blocks when no activity is detected,
+        to ensure sync time is bounded on oracle restart.
         """
         try:
             # Get the latest block from source chain
             latest_block_number = self.source_w3.eth.block_number
             assert isinstance(self.config.mode_config, WatcherModeConfig)
+
+            # Check if heartbeat is due (first run or interval elapsed)
+            current_time = time.time()
+            heartbeat_interval = self.config.mode_config.heartbeat_interval_seconds
+            heartbeat_due = (
+                self.last_heartbeat_time is None
+                or (current_time - self.last_heartbeat_time) >= heartbeat_interval
+            )
 
             # Determine starting point using last_scanned_block (in-memory state)
             # Track the last processed block for logging purposes
@@ -500,16 +500,10 @@ class HeaderOracle:
 
                         block = await self.fetch_block_by_number(block_number)
                         if block:
-                            block_hash = block.get("hash")
-                            if block_hash is not None:
-                                block_hash_hex = (
-                                    block_hash.hex()
-                                    if isinstance(block_hash, bytes)
-                                    else block_hash
-                                )
-                                if not block_hash_hex.startswith("0x"):
-                                    block_hash_hex = "0x" + block_hash_hex
-
+                            block_hash_hex = self._normalize_block_hash(
+                                block.get("hash")
+                            )
+                            if block_hash_hex is not None:
                                 blocks_with_interactions.append(block_number)
                                 block_hashes_to_submit.append(block_hash_hex)
                             else:
@@ -527,7 +521,9 @@ class HeaderOracle:
 
                 except Exception as e:
                     logger.error(f"Error processing block {block_number}: {e}")
-                    break
+                    break  # Stop and retry this block next cycle
+
+            # Submit all blocks with interactions in a single batch
             if blocks_with_interactions:
                 logger.info(
                     f"Submitting batch of {len(blocks_with_interactions)} blocks with interactions"
@@ -540,11 +536,58 @@ class HeaderOracle:
                     logger.info(
                         f"Successfully pushed {len(blocks_with_interactions)} block headers with interactions"
                     )
+                    # Reset heartbeat timer on successful activity submission
+                    self.last_heartbeat_time = time.time()
                 else:
                     logger.error(
                         f"Failed to push batch of {len(blocks_with_interactions)} block headers"
                     )
 
+            # Submit heartbeat if no interactions found and heartbeat is due
+            elif heartbeat_due and last_successful_block >= start_block:
+                # Use the last successfully scanned block as the heartbeat checkpoint
+                heartbeat_block = last_successful_block
+                logger.info(
+                    f"No interactions found, submitting heartbeat block {heartbeat_block}"
+                )
+
+                # Fetch the block to get its hash
+                block = await self.fetch_block_by_number(heartbeat_block)
+                if block:
+                    block_hash_hex = self._normalize_block_hash(block.get("hash"))
+                    if block_hash_hex is not None:
+                        success = await self.block_submitter.submit_block_header(
+                            heartbeat_block, block_hash_hex
+                        )
+
+                        if success:
+                            logger.info(
+                                f"Heartbeat: stored block {heartbeat_block} as checkpoint"
+                            )
+                        else:
+                            logger.warning(
+                                f"Heartbeat submission failed for block {heartbeat_block}"
+                            )
+                    else:
+                        logger.warning(
+                            f"Heartbeat block {heartbeat_block} has no hash"
+                        )
+                else:
+                    logger.warning(
+                        f"Could not fetch heartbeat block {heartbeat_block}"
+                    )
+
+                # Always update timer, avoid retry storm for non-critical block
+                self.last_heartbeat_time = time.time()
+
+            elif heartbeat_due:
+                # Heartbeat due but scan failed before processing any blocks
+                logger.warning(
+                    "Heartbeat due but scan failed before processing any blocks"
+                )
+                self.last_heartbeat_time = time.time()
+
+            # Update scan position to last successfully processed block
             if last_successful_block >= start_block:
                 self.last_scanned_block = last_successful_block
             scanned_count = (
@@ -614,6 +657,18 @@ class HeaderOracle:
                 f"Error checking block {block_number} for interactions: {e}"
             )
             return False
+
+    def _normalize_block_hash(self, block_hash: bytes | str | None) -> str | None:
+        """
+        Normalize block hash to hex string with 0x prefix.
+
+        :param block_hash: Block hash as bytes, hex string, or None
+        :return: Normalized hex string with 0x prefix, or None if input is None
+        """
+        if block_hash is None:
+            return None
+        hex_str = block_hash.hex() if isinstance(block_hash, bytes) else block_hash
+        return hex_str if hex_str.startswith("0x") else f"0x{hex_str}"
 
     def _is_watched_transaction(self, tx: Any) -> bool:
         """
@@ -785,16 +840,12 @@ class HeaderOracle:
 
                 for block_num in sorted_blocks:
                     block = await self.fetch_block_by_number(block_num)
-                    if block and block.get("hash"):
-                        block_hash = block["hash"]
-                        block_hash_hex = (
-                            block_hash.hex()
-                            if isinstance(block_hash, bytes)
-                            else block_hash
+                    if block:
+                        block_hash_hex = self._normalize_block_hash(
+                            block.get("hash")
                         )
-                        if not block_hash_hex.startswith("0x"):
-                            block_hash_hex = "0x" + block_hash_hex
-                        block_hashes_to_submit.append(block_hash_hex)
+                        if block_hash_hex:
+                            block_hashes_to_submit.append(block_hash_hex)
 
                 if len(sorted_blocks) == len(block_hashes_to_submit):
                     success = (

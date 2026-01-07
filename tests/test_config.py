@@ -361,6 +361,66 @@ class TestWatcherModeConfig:
         with pytest.raises(AttributeError):
             config.batch_size = 100
 
+    def test_default_heartbeat_interval(self):
+        """Test default heartbeat interval."""
+        config = WatcherModeConfig(
+            watch_addresses=["0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d"],
+            scan_interval=60,
+        )
+
+        assert config.heartbeat_interval_seconds == 3600  # Default value
+
+    def test_custom_heartbeat_interval(self):
+        """Test custom heartbeat interval values."""
+        config = WatcherModeConfig(
+            watch_addresses=["0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d"],
+            scan_interval=60,
+            heartbeat_interval_seconds=7200,
+        )
+
+        assert config.heartbeat_interval_seconds == 7200
+
+    def test_heartbeat_interval_validation_zero(self):
+        """Test that zero heartbeat interval raises an error."""
+        with pytest.raises(
+            ValueError, match="Heartbeat interval must be positive"
+        ):
+            WatcherModeConfig(
+                watch_addresses=["0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d"],
+                scan_interval=60,
+                heartbeat_interval_seconds=0,
+            )
+
+    def test_heartbeat_interval_validation_negative(self):
+        """Test that negative heartbeat interval raises an error."""
+        with pytest.raises(
+            ValueError, match="Heartbeat interval must be positive"
+        ):
+            WatcherModeConfig(
+                watch_addresses=["0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d"],
+                scan_interval=60,
+                heartbeat_interval_seconds=-1,
+            )
+
+    def test_heartbeat_interval_validation_too_high(self):
+        """Test that heartbeat interval over 86400 raises an error."""
+        with pytest.raises(ValueError, match="Heartbeat interval too high"):
+            WatcherModeConfig(
+                watch_addresses=["0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d"],
+                scan_interval=60,
+                heartbeat_interval_seconds=86401,
+            )
+
+    def test_heartbeat_interval_at_max(self):
+        """Test that heartbeat interval at exactly 86400 is valid."""
+        config = WatcherModeConfig(
+            watch_addresses=["0x85BfE05492aFC3D04Ff3B2ca6771ACF6f853d90d"],
+            scan_interval=60,
+            heartbeat_interval_seconds=86400,
+        )
+
+        assert config.heartbeat_interval_seconds == 86400
+
 
 class TestPushModeConfig:
     """Tests for PushModeConfig."""

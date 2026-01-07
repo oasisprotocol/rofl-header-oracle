@@ -134,6 +134,7 @@ class WatcherModeConfig:
     :cvar batch_size: Maximum blocks to scan per iteration (env: WATCHER_BATCH_SIZE)
     :cvar lookback_blocks: Number of blocks to look back on startup (env: LOOKBACK_BLOCKS)
     :cvar enable_internal_tx_detection: Enable internal transaction detection (env: ENABLE_INTERNAL_TX_DETECTION)
+    :cvar heartbeat_interval_seconds: Seconds between heartbeat submissions when no activity (env: HEARTBEAT_INTERVAL_SECONDS)
     """
 
     watch_addresses: list[str]
@@ -141,6 +142,7 @@ class WatcherModeConfig:
     batch_size: int = 50
     lookback_blocks: int = 100
     enable_internal_tx_detection: bool = False
+    heartbeat_interval_seconds: int = 3600
 
     def __post_init__(self) -> None:
         """Validate watcher configuration."""
@@ -169,6 +171,15 @@ class WatcherModeConfig:
         if self.lookback_blocks > 1000:
             raise ValueError(
                 f"Lookback blocks too high (max 1000), got {self.lookback_blocks}"
+            )
+
+        if self.heartbeat_interval_seconds <= 0:
+            raise ValueError(
+                f"Heartbeat interval must be positive, got {self.heartbeat_interval_seconds}"
+            )
+        if self.heartbeat_interval_seconds > 86400:
+            raise ValueError(
+                f"Heartbeat interval too high (max 86400s/24h), got {self.heartbeat_interval_seconds}"
             )
 
         if self.watch_addresses is None or len(self.watch_addresses) == 0:
@@ -517,6 +528,9 @@ class OracleConfig:
                     "ENABLE_INTERNAL_TX_DETECTION", "false"
                 ).lower()
                 in ("true", "1", "yes"),
+                heartbeat_interval_seconds=int(
+                    os.environ.get("HEARTBEAT_INTERVAL_SECONDS", "3600")
+                ),
             )
         else:  # OracleMode.TOKEN_WATCHER
             token_addresses_str = os.environ.get("TOKEN_ADDRESSES", "")
@@ -622,6 +636,9 @@ class OracleConfig:
             logger.info(f"  Batch Size: {self.mode_config.batch_size}")
             logger.info(
                 f"  Lookback Blocks: {self.mode_config.lookback_blocks}"
+            )
+            logger.info(
+                f"  Heartbeat Interval: {self.mode_config.heartbeat_interval_seconds} seconds"
             )
             logger.info(
                 f"  Internal TX Detection: {'ENABLED' if self.mode_config.enable_internal_tx_detection else 'DISABLED'}"
