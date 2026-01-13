@@ -915,7 +915,7 @@ class TestWatcherMode:
 
     @pytest.mark.asyncio
     async def test_watch_addresses_batch_submission_failure(self):
-        """Test that watcher completes scan even if batch submission fails."""
+        """Test that scan position does NOT advance when batch submission fails."""
         oracle = HeaderOracle()
         oracle.watched_addresses = {
             "0x742d35cc6634c0532925a3b844bc9e7595f0beb7"
@@ -928,7 +928,8 @@ class TestWatcherMode:
             lookback_blocks=10,
             enable_internal_tx_detection=False,
         )
-        oracle.last_scanned_block = None
+        # Set initial scan position to a known value
+        oracle.last_scanned_block = 985
         oracle.last_heartbeat_time = None
 
         # Mock BlockSubmitter
@@ -967,8 +968,8 @@ class TestWatcherMode:
         mock_block_submitter.submit_block_headers_batch.assert_called_once_with(
             [992, 995], [f"0x{992:064x}", f"0x{995:064x}"]
         )
-        # Scan position should still be updated despite submission failure
-        assert oracle.last_scanned_block == 1000
+        # Scan position should NOT advance on submission failure (will retry next cycle)
+        assert oracle.last_scanned_block == 985
 
     @pytest.mark.asyncio
     async def test_watcher_run_mode(self, mock_oracle_config_watcher):
@@ -1586,7 +1587,7 @@ class TestTokenWatcherMode:
 
     @pytest.mark.asyncio
     async def test_watch_token_transfers_batch_submission_failure(self):
-        """Test handling of batch submission failures."""
+        """Test that scan position does NOT advance when batch submission fails."""
         oracle = HeaderOracle()
         oracle.config = MagicMock()
         oracle.config.mode_config = TokenWatcherModeConfig(
@@ -1617,7 +1618,8 @@ class TestTokenWatcherMode:
 
         await oracle.watch_token_transfers()
 
-        assert oracle.last_scanned_block == 1000
+        # Scan position should NOT advance on submission failure (will retry next cycle)
+        assert oracle.last_scanned_block == 990
         mock_block_submitter.submit_block_headers_batch.assert_called_once_with(
             [995], [f"0x{995:064x}"]
         )

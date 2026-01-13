@@ -40,6 +40,12 @@ class HeaderOracle:
     and submits them to the ROFLAdapter contract on Oasis Sapphire.
     """
 
+    @property
+    def _log_prefix(self) -> str:
+        """Log prefix with chain ID for multi-chain disambiguation."""
+        chain_id = getattr(self, "source_chain_id", None)
+        return f"[chain:{chain_id}]" if chain_id else "[chain:?]"
+
     @classmethod
     async def create(cls, config: OracleConfig) -> "HeaderOracle":
         """
@@ -101,32 +107,7 @@ class HeaderOracle:
                 port=8080, oracle_instance=self
             )
 
-            if not config.local_mode:
-                # Initialize ROFL utility
-                logger.debug("Initializing ROFL utility...")
-                self.rofl_utility = RoflUtility()
-
-                # Generate/fetch oracle signing key
-                logger.info("Generating oracle signing key from ROFL...")
-                self.secret = await self.rofl_utility.fetch_key(
-                    "rofl-oracle-signer"
-                )
-                logger.info("Oracle signing key generated successfully")
-            else:
-                # Use local private key for testing
-                logger.debug("Using local private key (LOCAL MODE)")
-                self.secret = config.local_private_key
-                self.rofl_utility = None
-                logger.debug("Local private key loaded")
-
-            # Initialize contract utility with secret for both modes
-            logger.debug("Initializing contract utility with signing key...")
-            self.contract_utility = ContractUtility(
-                config.common_config.target_rpc_url, self.secret
-            )
-            logger.debug("Contract utility initialized with signing capability")
-
-            # Connect to source chain for block fetching
+            # Connect to source chain FIRST to get chain_id for key derivation
             logger.debug(
                 f"Connecting to source chain at {config.common_config.source_rpc_url}"
             )
@@ -143,13 +124,34 @@ class HeaderOracle:
                     f"Failed to connect to source chain at {config.common_config.source_rpc_url}"
                 )
 
-            # Fetch chain ID from the connected RPC endpoint and update config
+            # Fetch chain ID for key derivation
             logger.debug("Fetching chain ID...")
             chain_id = self.source_w3.eth.chain_id
-
-            # Update config with chain ID
             self.config = self.config.with_chain_id(chain_id)
             self.source_chain_id = chain_id
+            logger.info(f"Connected to source chain with ID: {chain_id}")
+
+            if not config.local_mode:
+                logger.debug("Initializing ROFL utility...")
+                self.rofl_utility = RoflUtility()
+
+                # Chain-specific key derivation to avoid nonce collisions
+                key_id = f"rofl-oracle-signer-{chain_id}"
+                logger.info(f"Deriving chain-specific signing key: {key_id}")
+                self.secret = await self.rofl_utility.fetch_key(key_id)
+                logger.info("Chain-specific signing key generated successfully")
+            else:
+                # Use local private key for testing
+                logger.debug("Using local private key (LOCAL MODE)")
+                self.secret = config.local_private_key
+                self.rofl_utility = None
+                logger.debug("Local private key loaded")
+
+            logger.debug("Initializing contract utility with signing key...")
+            self.contract_utility = ContractUtility(
+                config.common_config.target_rpc_url, self.secret
+            )
+            logger.debug("Contract utility initialized with signing capability")
 
             # Initialize block submitter
             logger.debug("Initializing block submitter...")
@@ -164,27 +166,29 @@ class HeaderOracle:
             )
             logger.debug("Block submitter initialized")
 
-            # Register reporter address if in ROFL mode
+            # Register chain-specific reporter if in ROFL mode
             if not config.local_mode:
                 reporter_address = self.contract_utility.w3.eth.default_account
-                logger.info(f"Reporter address: {reporter_address}")
+                logger.info(
+                    f"Chain {self.source_chain_id} reporter address: {reporter_address}"
+                )
 
-                # Check if reporter is already registered
+                # Check if this chain's reporter is already registered
                 current_reporter = (
                     await self.block_submitter.get_registered_reporter()
                 )
 
                 if current_reporter != reporter_address:
                     logger.info(
-                        "Registering reporter address with ROFLAdapter..."
+                        f"Registering reporter for chain {self.source_chain_id}..."
                     )
                     await self.block_submitter.register_reporter()
                     logger.info(
-                        f"Reporter address {reporter_address} registered successfully"
+                        f"Reporter {reporter_address} registered for chain {self.source_chain_id}"
                     )
                 else:
                     logger.info(
-                        f"Reporter address {reporter_address} already registered"
+                        f"Reporter already registered for chain {self.source_chain_id}"
                     )
 
             # Initialize event processor
@@ -477,7 +481,7 @@ class HeaderOracle:
 
             num_blocks = end_block - start_block + 1
             logger.info(
-                f"Scanning {num_blocks} blocks ({start_block} to {end_block}) for watched address interactions"
+                f"{self._log_prefix} Scanning {num_blocks} blocks ({start_block}-{end_block})"
             )
 
             blocks_with_interactions = []
@@ -489,13 +493,13 @@ class HeaderOracle:
                     block_number - start_block
                 ) % 10 == 0 and block_number != start_block:
                     logger.info(
-                        f"  Progress: scanned {block_number - start_block}/{num_blocks} blocks..."
+                        f"{self._log_prefix} Progress: {block_number - start_block}/{num_blocks} blocks"
                     )
 
                 try:
                     if await self._check_block_for_interactions(block_number):
                         logger.info(
-                            f"Interaction detected in block {block_number}"
+                            f"{self._log_prefix} Interaction in block {block_number}"
                         )
 
                         block = await self.fetch_block_by_number(block_number)
@@ -523,10 +527,13 @@ class HeaderOracle:
                     logger.error(f"Error processing block {block_number}: {e}")
                     break  # Stop and retry this block next cycle
 
+            # Track submission success for scan position advancement
+            submission_succeeded = True
+
             # Submit all blocks with interactions in a single batch
             if blocks_with_interactions:
                 logger.info(
-                    f"Submitting batch of {len(blocks_with_interactions)} blocks with interactions"
+                    f"{self._log_prefix} Submitting {len(blocks_with_interactions)} blocks"
                 )
                 success = await self.block_submitter.submit_block_headers_batch(
                     blocks_with_interactions, block_hashes_to_submit
@@ -534,21 +541,23 @@ class HeaderOracle:
 
                 if success:
                     logger.info(
-                        f"Successfully pushed {len(blocks_with_interactions)} block headers with interactions"
+                        f"{self._log_prefix} Submitted {len(blocks_with_interactions)} block headers"
                     )
                     # Reset heartbeat timer on successful activity submission
                     self.last_heartbeat_time = time.time()
+                    submission_succeeded = True
                 else:
                     logger.error(
-                        f"Failed to push batch of {len(blocks_with_interactions)} block headers"
+                        f"{self._log_prefix} Submission failed, will retry"
                     )
+                    submission_succeeded = False
 
             # Submit heartbeat if no interactions found and heartbeat is due
             elif heartbeat_due and last_successful_block >= start_block:
                 # Use the last successfully scanned block as the heartbeat checkpoint
                 heartbeat_block = last_successful_block
                 logger.info(
-                    f"No interactions found, submitting heartbeat block {heartbeat_block}"
+                    f"{self._log_prefix} Heartbeat block {heartbeat_block}"
                 )
 
                 # Fetch the block to get its hash
@@ -587,16 +596,21 @@ class HeaderOracle:
                 )
                 self.last_heartbeat_time = time.time()
 
-            # Update scan position to last successfully processed block
-            if last_successful_block >= start_block:
+            # Update scan position only if submission succeeded (or no submission needed)
+            if submission_succeeded and last_successful_block >= start_block:
                 self.last_scanned_block = last_successful_block
+            elif not submission_succeeded:
+                logger.warning(
+                    f"Keeping scan position at {self.last_scanned_block} due to submission failure"
+                )
+
             scanned_count = (
                 last_successful_block - start_block + 1
                 if last_successful_block >= start_block
                 else 0
             )
             logger.info(
-                f"Scan complete: checked {scanned_count}/{num_blocks} blocks, found {len(blocks_with_interactions)} interaction(s)"
+                f"{self._log_prefix} Scan complete: {scanned_count}/{num_blocks} blocks, {len(blocks_with_interactions)} interactions"
             )
 
         except Exception as e:
@@ -759,7 +773,7 @@ class HeaderOracle:
                 start_block = self.last_scanned_block + 1
             else:
                 start_block = latest_block_number
-                logger.info(f"First run: starting from block {start_block}")
+                logger.info(f"{self._log_prefix} First run: starting from block {start_block}")
 
             if start_block > latest_block_number:
                 return
@@ -770,7 +784,7 @@ class HeaderOracle:
             )
             num_blocks = end_block - start_block + 1
             logger.info(
-                f"Scanning {num_blocks} blocks ({start_block}-{end_block})"
+                f"{self._log_prefix} Scanning {num_blocks} blocks ({start_block}-{end_block})"
             )
 
             blocks_with_transfers = set()
@@ -825,7 +839,7 @@ class HeaderOracle:
 
                                 blocks_with_transfers.add(block_num)
                                 logger.info(
-                                    f"Transfer: block={block_num}, tx={tx_hash_str}"
+                                    f"{self._log_prefix} Transfer: block={block_num}, tx={tx_hash_str[:18]}..."
                                 )
 
                     except Exception as e:
@@ -855,12 +869,24 @@ class HeaderOracle:
                     )
                     if success:
                         logger.info(
-                            f"Submitted {len(sorted_blocks)} block headers"
+                            f"{self._log_prefix} Submitted {len(sorted_blocks)} block headers"
                         )
+                        self.last_scanned_block = end_block
+                    else:
+                        logger.warning(
+                            f"{self._log_prefix} Submission failed, will retry {sorted_blocks[0]}-{sorted_blocks[-1]}"
+                        )
+                else:
+                    logger.warning(
+                        f"Could not fetch all block hashes "
+                        f"({len(block_hashes_to_submit)}/{len(sorted_blocks)}) - will retry"
+                    )
+            else:
+                # No transfers found - safe to advance scan position
+                self.last_scanned_block = end_block
 
-            self.last_scanned_block = end_block
             logger.info(
-                f"Scan complete: {len(blocks_with_transfers)} transfer(s) in {num_blocks} blocks"
+                f"{self._log_prefix} Scan complete: {len(blocks_with_transfers)} transfers in {num_blocks} blocks"
             )
 
         except Exception as e:

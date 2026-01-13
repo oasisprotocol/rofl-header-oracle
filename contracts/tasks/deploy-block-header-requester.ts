@@ -2,10 +2,24 @@ import { task } from "hardhat/config";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { saveDeploymentInfo } from "../utils/save-deployment.js";
 
-export const deployBlockHeaderRequester = task("deploy:block-header-requester", "Deploy the BlockHeaderRequester contract")
+// CreateX is deployed at the same address on all supported chains
+const CREATEX_ADDRESS = "0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed";
+
+// Minimal ABI for CreateX deployCreate2
+const CREATEX_ABI = [
+  "function deployCreate2(bytes32 salt, bytes initCode) external payable returns (address)",
+  "event ContractCreation(address indexed newContract, bytes32 indexed salt)",
+];
+
+export const deployBlockHeaderRequester = task("deploy:block-header-requester", "Deploy the BlockHeaderRequester contract using CreateX")
   .addFlag({
     name: "verify",
     description: "Verify contract on Etherscan",
+  })
+  .addOption({
+    name: "salt",
+    description: "Custom salt for CREATE2 (32 bytes hex).",
+    defaultValue: "0x0000000000000000000000000000000000000000000000000000000000000000",
   })
   .setAction(async () => ({
     default: async (taskArgs: any, hre: HardhatRuntimeEnvironment) => {
@@ -13,26 +27,63 @@ export const deployBlockHeaderRequester = task("deploy:block-header-requester", 
 
       const networkName = hre.globalOptions.network || "hardhat";
 
-      console.log("Deploying BlockHeaderRequester contract...");
+      console.log("BlockHeaderRequester CreateX Deployment");
       console.log("Network:", networkName);
 
       const [deployer] = await ethers.getSigners();
-      console.log("Deploying with account:", deployer.address);
+      console.log("Deployer:", deployer.address);
+
+      // Check CreateX exists on this network
+      const createXCode = await ethers.provider.getCode(CREATEX_ADDRESS);
+      if (createXCode === "0x") {
+        throw new Error(`CreateX not deployed on ${networkName}. Address: ${CREATEX_ADDRESS}`);
+      }
+
+      const createX = new ethers.Contract(CREATEX_ADDRESS, CREATEX_ABI, deployer);
+
+      // Get the contract bytecode (initCode)
+      const BlockHeaderRequester = await ethers.getContractFactory("BlockHeaderRequester");
+      const initCode = BlockHeaderRequester.bytecode;
+
+      const salt = taskArgs.salt;
+      console.log("Salt:", salt);
 
       const balance = await ethers.provider.getBalance(deployer.address);
       console.log("Account balance:", ethers.formatEther(balance), "ETH");
 
-      const BlockHeaderRequester = await ethers.getContractFactory("BlockHeaderRequester");
-      const blockHeaderRequester = await BlockHeaderRequester.deploy();
+      console.log("\nDeploying via CreateX...");
 
-      await blockHeaderRequester.waitForDeployment();
-      const contractAddress = await blockHeaderRequester.getAddress();
+      const tx = await createX["deployCreate2(bytes32,bytes)"](salt, initCode);
 
-      console.log("BlockHeaderRequester deployed to:", contractAddress);
-      console.log("Transaction hash:", blockHeaderRequester.deploymentTransaction()?.hash);
+      console.log("Transaction hash:", tx.hash);
+      console.log("Waiting for confirmation...");
 
-      console.log("Waiting for block confirmations...");
-      await blockHeaderRequester.deploymentTransaction()?.wait(2);
+      const receipt = await tx.wait(2);
+
+      // Extract deployed address from ContractCreation event
+      const creationEvent = receipt?.logs
+        .map((log: any) => {
+          try {
+            return createX.interface.parseLog(log);
+          } catch {
+            return null;
+          }
+        })
+        .find((parsed: any) => parsed?.name === "ContractCreation");
+
+      if (!creationEvent?.args?.newContract) {
+        throw new Error("ContractCreation event not found in receipt");
+      }
+
+      const contractAddress = creationEvent.args.newContract;
+
+      // Verify deployment succeeded
+      const deployedCode = await ethers.provider.getCode(contractAddress);
+      if (deployedCode === "0x") {
+        throw new Error(`Deployment failed - no code at ${contractAddress}`);
+      }
+
+      console.log("\n✅ BlockHeaderRequester deployed to:", contractAddress);
 
       if (taskArgs.verify && networkName !== "localhost" && networkName !== "hardhat") {
         console.log("\nVerifying contract on Etherscan...");
@@ -57,7 +108,9 @@ export const deployBlockHeaderRequester = task("deploy:block-header-requester", 
       console.log("Network:", networkName);
       console.log("Contract Address:", contractAddress);
       console.log("Deployer:", deployer.address);
-      console.log("Block Number:", await ethers.provider.getBlockNumber());
+      console.log("Salt:", salt);
+      console.log("CreateX:", CREATEX_ADDRESS);
+      console.log("Block Number:", receipt?.blockNumber);
       console.log("==========================\n");
 
       await saveDeploymentInfo(
@@ -66,8 +119,10 @@ export const deployBlockHeaderRequester = task("deploy:block-header-requester", 
         hre,
         ethers,
         {
-          transactionHash: blockHeaderRequester.deploymentTransaction()?.hash,
+          transactionHash: tx.hash,
           constructorArgs: [],
+          salt,
+          createX: CREATEX_ADDRESS,
         }
       );
 

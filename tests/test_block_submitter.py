@@ -242,13 +242,15 @@ class TestBlockSubmitter:
     async def test_get_registered_reporter(
         self, mock_contract_util, mock_rofl_util, mock_contract
     ):
-        """Test getting the registered reporter address."""
+        """Test getting the registered reporter address for a specific chain."""
         reporter_address = "0x1234567890123456789012345678901234567890"
+        source_chain_id = 1
 
-        # Setup mock for ROFL_REPORTER function call
-        mock_contract.functions.ROFL_REPORTER = MagicMock()
-        mock_contract.functions.ROFL_REPORTER().call = MagicMock(
-            return_value=reporter_address
+        # Setup mock for chainReporters(chainId) mapping call
+        mock_get_reporter = MagicMock()
+        mock_get_reporter.call = MagicMock(return_value=reporter_address)
+        mock_contract.functions.chainReporters = MagicMock(
+            return_value=mock_get_reporter
         )
 
         mock_contract_util.get_contract_abi = MagicMock(return_value=[])
@@ -259,22 +261,28 @@ class TestBlockSubmitter:
         submitter = BlockSubmitter(
             contract_util=mock_contract_util,
             rofl_util=mock_rofl_util,
-            source_chain_id=1,
+            source_chain_id=source_chain_id,
             contract_address="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb7",
         )
 
         result = await submitter.get_registered_reporter()
         assert result == reporter_address
+        mock_contract.functions.chainReporters.assert_called_once_with(source_chain_id)
 
     @pytest.mark.asyncio
     async def test_get_registered_reporter_none(
         self, mock_contract_util, mock_rofl_util, mock_contract
     ):
-        """Test getting registered reporter when none is set."""
-        # Zero address means no reporter registered
-        mock_contract.functions.ROFL_REPORTER = MagicMock()
-        mock_contract.functions.ROFL_REPORTER().call = MagicMock(
+        """Test getting registered reporter when none is set for the chain."""
+        source_chain_id = 1
+
+        # Zero address means no reporter registered for this chain
+        mock_get_reporter = MagicMock()
+        mock_get_reporter.call = MagicMock(
             return_value="0x0000000000000000000000000000000000000000"
+        )
+        mock_contract.functions.chainReporters = MagicMock(
+            return_value=mock_get_reporter
         )
 
         mock_contract_util.get_contract_abi = MagicMock(return_value=[])
@@ -285,19 +293,21 @@ class TestBlockSubmitter:
         submitter = BlockSubmitter(
             contract_util=mock_contract_util,
             rofl_util=mock_rofl_util,
-            source_chain_id=1,
+            source_chain_id=source_chain_id,
             contract_address="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb7",
         )
 
         result = await submitter.get_registered_reporter()
         assert result is None
+        mock_contract.functions.chainReporters.assert_called_once_with(source_chain_id)
 
     @pytest.mark.asyncio
     async def test_register_reporter_success(
         self, mock_contract_util, mock_rofl_util, mock_contract
     ):
-        """Test successful reporter registration."""
+        """Test successful chain-specific reporter registration."""
         reporter_address = "0x1234567890123456789012345678901234567890"
+        source_chain_id = 1
 
         # Setup mocks
         mock_contract_util.w3.eth.default_account = reporter_address
@@ -312,7 +322,7 @@ class TestBlockSubmitter:
                 "value": Wei(0),
             }
         )
-        mock_contract.functions.setReporter.return_value = mock_build_tx
+        mock_contract.functions.setChainReporter = MagicMock(return_value=mock_build_tx)
 
         mock_contract_util.get_contract_abi = MagicMock(return_value=[])
         mock_contract_util.w3.eth.contract = MagicMock(
@@ -322,14 +332,15 @@ class TestBlockSubmitter:
         submitter = BlockSubmitter(
             contract_util=mock_contract_util,
             rofl_util=mock_rofl_util,
-            source_chain_id=1,
+            source_chain_id=source_chain_id,
             contract_address="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb7",
         )
 
         # Should complete without raising an exception
         await submitter.register_reporter()
 
-        mock_contract.functions.setReporter.assert_called_once_with(
+        mock_contract.functions.setChainReporter.assert_called_once_with(
+            source_chain_id,
             reporter_address
         )
         mock_rofl_util.submit_tx.assert_called_once()
@@ -343,6 +354,7 @@ class TestBlockSubmitter:
         mock_contract_util.w3.eth.contract = MagicMock(
             return_value=mock_contract
         )
+        mock_contract.functions.setChainReporter = MagicMock()
 
         submitter = BlockSubmitter(
             contract_util=mock_contract_util,
@@ -354,7 +366,7 @@ class TestBlockSubmitter:
         # Should complete without raising an exception (no-op in local mode)
         await submitter.register_reporter()
 
-        mock_contract.functions.setReporter.assert_not_called()
+        mock_contract.functions.setChainReporter.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_register_reporter_failure(
@@ -362,6 +374,7 @@ class TestBlockSubmitter:
     ):
         """Test that registration failure raises an exception with details."""
         reporter_address = "0x1234567890123456789012345678901234567890"
+        source_chain_id = 1
 
         mock_contract_util.w3.eth.default_account = reporter_address
 
@@ -375,7 +388,7 @@ class TestBlockSubmitter:
                 "value": Wei(0),
             }
         )
-        mock_contract.functions.setReporter.return_value = mock_build_tx
+        mock_contract.functions.setChainReporter = MagicMock(return_value=mock_build_tx)
 
         mock_contract_util.get_contract_abi = MagicMock(return_value=[])
         mock_contract_util.w3.eth.contract = MagicMock(
@@ -392,7 +405,7 @@ class TestBlockSubmitter:
         submitter = BlockSubmitter(
             contract_util=mock_contract_util,
             rofl_util=mock_rofl_util,
-            source_chain_id=1,
+            source_chain_id=source_chain_id,
             contract_address="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb7",
         )
 

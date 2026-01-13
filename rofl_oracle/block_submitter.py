@@ -83,16 +83,18 @@ class BlockSubmitter:
 
     async def get_registered_reporter(self) -> str | None:
         """
-        Get the currently registered reporter address from the ROFLAdapter contract.
+        Get the registered reporter address for this chain from the ROFLAdapter contract.
 
         Returns:
-            The registered reporter address, or None if not set
+            The registered reporter address for this chain, or None if not set
         """
         try:
             if not self.rofl_util:
                 return None
 
-            reporter_address = self.contract.functions.ROFL_REPORTER().call()
+            reporter_address = self.contract.functions.chainReporters(
+                self.source_chain_id
+            ).call()
             return (
                 reporter_address
                 if reporter_address
@@ -100,24 +102,27 @@ class BlockSubmitter:
                 else None
             )
         except Exception as e:
-            logger.error(f"Error getting registered reporter: {e}")
+            logger.error(
+                f"Error getting reporter for chain {self.source_chain_id}: {e}"
+            )
             return None
 
     async def register_reporter(self) -> None:
         """
-        Register the reporter address with the ROFLAdapter contract.
+        Register this chain's reporter address with the ROFLAdapter contract.
         Only needed in ROFL mode on first initialization.
-        Uses ROFL's authority to call setReporter.
 
         Raises:
-            Exception: If registration fails with details about the failure
+            Exception: If registration fails
         """
         if not self.rofl_util:
             logger.debug("Reporter registration not needed in local mode")
             return
 
         reporter_address = self.contract_util.w3.eth.default_account
-        logger.info(f"Registering reporter address: {reporter_address}")
+        logger.info(
+            f"Registering reporter {reporter_address} for chain {self.source_chain_id}"
+        )
 
         tx_params: TxParams = {
             "from": "0x0000000000000000000000000000000000000000",  # ROFL will override
@@ -126,14 +131,28 @@ class BlockSubmitter:
             "value": Wei(0),
         }
 
-        tx_data: TxParams = self.contract.functions.setReporter(
+        tx_data: TxParams = self.contract.functions.setChainReporter(
+            self.source_chain_id,
             reporter_address
         ).build_transaction(tx_params)
 
-        logger.debug("Submitting reporter registration via ROFL...")
+        logger.debug("Submitting chain reporter registration via ROFL...")
 
         await self.rofl_util.submit_tx(tx_data)
-        logger.info(f"Reporter {reporter_address} registered successfully")
+        logger.info(
+            f"Reporter {reporter_address} registered for chain {self.source_chain_id}"
+        )
+
+    async def is_chain_supported(self) -> bool:
+        """Check if the source chain is registered as supported."""
+        try:
+            reporter = self.contract.functions.chainReporters(
+                self.source_chain_id
+            ).call()
+            return reporter != "0x0000000000000000000000000000000000000000"
+        except Exception as e:
+            logger.error(f"Error checking if chain {self.source_chain_id} is supported: {e}")
+            return False
 
     async def get_latest_block_number(self) -> int | None:
         """
