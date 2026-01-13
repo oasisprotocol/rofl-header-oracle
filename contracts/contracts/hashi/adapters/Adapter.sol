@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 pragma solidity ^0.8.20;
 
-// copied from
-// https://github.com/gnosis/hashi/blob/main/packages/evm/contracts/adapters/Adapter.sol
-
 import { IAdapter } from "../interfaces/IAdapter.sol";
 
 abstract contract Adapter is IAdapter {
@@ -27,7 +24,7 @@ abstract contract Adapter is IAdapter {
         bytes32 currentHash = _hashes[domain][id];
         if (currentHash != hash) {
             _hashes[domain][id] = hash;
-            emit HashStored(id, hash);
+            emit HashStored(domain, id, hash);
         }
     }
 }
