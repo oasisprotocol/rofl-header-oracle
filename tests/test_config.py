@@ -249,9 +249,7 @@ class TestWatcherModeConfig:
 
     def test_none_watch_addresses(self):
         """Test that None watch addresses raises an error."""
-        with pytest.raises(
-            ValueError, match="Watcher mode requires at least one watch address"
-        ):
+        with pytest.raises(ValueError, match="Watch addresses must be a list"):
             WatcherModeConfig(
                 watch_addresses=None,
                 scan_interval=60,
