@@ -40,6 +40,8 @@ class HeaderOracle:
     and submits them to the ROFLAdapter contract on Oasis Sapphire.
     """
 
+    last_heartbeat_time: float | None = None
+
     @property
     def _log_prefix(self) -> str:
         """Log prefix with chain ID for multi-chain disambiguation."""
@@ -233,6 +235,7 @@ class HeaderOracle:
                 self.last_scanned_block: int | None = None
                 self.processed_tx_hashes: dict[str, None] = {}
                 self.max_tx_cache_size = 10000
+                self.last_heartbeat_time: float | None = None
             elif config.oracle_mode == OracleMode.WATCHER:
                 assert isinstance(config.mode_config, WatcherModeConfig)
                 logger.info(
@@ -843,7 +846,7 @@ class HeaderOracle:
 
             blocks_with_transfers = set()
 
-            # Build recipient topics array for OR matching (reduces RPC calls from O(n×m) to O(n))
+            # Build recipient topics array for OR matching (reduces RPC calls from O(n*m) to O(n))
             recipient_topics = [
                 "0x" + addr[2:].lower().zfill(64)
                 for addr in self.config.mode_config.recipient_addresses

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Integration tests for watcher mode."""
 
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -1501,6 +1502,7 @@ class TestTokenWatcherMode:
         oracle.last_scanned_block = 990
         oracle.processed_tx_hashes = {}
         oracle.max_tx_cache_size = 1000
+        oracle.last_heartbeat_time = time.time()  # Skip heartbeat path
 
         mock_block_submitter = MagicMock()
         mock_block_submitter.submit_block_headers_batch = AsyncMock()
@@ -1630,7 +1632,11 @@ class TestTokenWatcherMode:
 
     @pytest.mark.asyncio
     async def test_watch_token_transfers_error_handling(self):
-        """Test error handling when get_logs fails."""
+        """Test error handling when get_logs fails.
+
+        When an RPC error occurs, the scan should abort early and NOT advance
+        the scan position. This ensures no blocks are skipped on transient errors.
+        """
         oracle = HeaderOracle()
         oracle.config = MagicMock()
         oracle.config.mode_config = TokenWatcherModeConfig(
@@ -1651,7 +1657,8 @@ class TestTokenWatcherMode:
 
         await oracle.watch_token_transfers()
 
-        assert oracle.last_scanned_block == 1000
+        # Scan position should NOT advance on error (defensive behavior)
+        assert oracle.last_scanned_block == 990
 
     @pytest.mark.asyncio
     async def test_watch_token_transfers_multiple_tokens_and_recipients(self):
@@ -1708,7 +1715,8 @@ class TestTokenWatcherMode:
 
         await oracle.watch_token_transfers()
 
-        assert call_count == 4
+        # 2 calls: one per token (recipients are OR-matched in a single query per token)
+        assert call_count == 2
         assert oracle.last_scanned_block == 1000
         mock_block_submitter.submit_block_headers_batch.assert_called_once()
 
