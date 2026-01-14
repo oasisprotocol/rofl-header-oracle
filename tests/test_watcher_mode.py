@@ -16,7 +16,7 @@ from rofl_oracle.config import (
     TokenWatcherModeConfig,
     WatcherModeConfig,
 )
-from rofl_oracle.header_oracle import HeaderOracle
+from rofl_oracle.header_oracle import TRANSFER_EVENT_SIGNATURE, HeaderOracle
 
 
 @pytest.fixture
@@ -1691,9 +1691,11 @@ class TestTokenWatcherMode:
         oracle.source_w3.eth.block_number = 1000
 
         call_count = 0
+        captured_filter_params = []
 
         def mock_get_logs(filter_params):
             nonlocal call_count
+            captured_filter_params.append(filter_params)
             call_count += 1
             if call_count == 1:
                 return [
@@ -1717,6 +1719,20 @@ class TestTokenWatcherMode:
 
         # 2 calls: one per token (recipients are OR-matched in a single query per token)
         assert call_count == 2
+
+        # Verify OR-matching filter structure for each call
+        expected_recipients = {
+            "0x000000000000000000000000abcdef0123456789abcdef0123456789abcdef01",
+            "0x0000000000000000000000009876543210987654321098765432109876543210",
+        }
+        for params in captured_filter_params:
+            # topics: [TRANSFER_SIG, None (any sender), [recipient1, recipient2]]
+            assert len(params["topics"]) == 3
+            assert params["topics"][0] == TRANSFER_EVENT_SIGNATURE
+            assert params["topics"][1] is None  # Any sender
+            assert isinstance(params["topics"][2], list)  # OR-matched recipients
+            assert len(params["topics"][2]) == 2
+            assert set(params["topics"][2]) == expected_recipients
         assert oracle.last_scanned_block == 1000
         mock_block_submitter.submit_block_headers_batch.assert_called_once()
 

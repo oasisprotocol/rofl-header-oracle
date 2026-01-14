@@ -58,7 +58,7 @@ class BlockSubmitter:
             request_timeout: Timeout for transaction receipts in seconds (default: 30)
             circuit_breaker: Optional circuit breaker for resilience
             retry_config: Optional retry configuration
-            min_reporter_balance: Minimum required balance in native tokens (default: 0.001)
+            min_reporter_balance: Minimum required balance in native tokens (default: 1)
         """
         self.contract_util: ContractUtility = contract_util
         self.rofl_util: RoflUtility | None = rofl_util

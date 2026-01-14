@@ -182,11 +182,11 @@ class WatcherModeConfig:
                 f"Heartbeat interval too high (max 86400s/24h), got {self.heartbeat_interval_seconds}"
             )
 
-        if self.watch_addresses is None or len(self.watch_addresses) == 0:
-            raise ValueError("Watcher mode requires at least one watch address")
-
         if not isinstance(self.watch_addresses, list):
             raise ValueError("Watch addresses must be a list")
+
+        if len(self.watch_addresses) == 0:
+            raise ValueError("Watcher mode requires at least one watch address")
 
         # Checksum all watch addresses
         checksummed_addresses = []
