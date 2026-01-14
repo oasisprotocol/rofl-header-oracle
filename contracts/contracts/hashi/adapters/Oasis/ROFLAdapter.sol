@@ -25,7 +25,6 @@ contract ROFLAdapter is BlockHashAdapter {
     error UnsupportedChain(uint256 chainId);
     error EmptyBatch();
     error MismatchedInputLengths(uint256 blockNumbersLen, uint256 blockHashesLen);
-    error BlockZeroNotAllowed();
 
     event ChainReporterSet(uint256 indexed chainId, address indexed reporter);
     event ChainRemoved(uint256 indexed chainId);
@@ -58,8 +57,9 @@ contract ROFLAdapter is BlockHashAdapter {
         uint256 blockNumber,
         bytes32 blockHash
     ) external onlyChainReporter(chainId) {
-        if (blockNumber == 0) revert BlockZeroNotAllowed();
-        lastStoredBlock[chainId] = blockNumber;
+        if (lastStoredBlock[chainId] < blockNumber) {
+            lastStoredBlock[chainId] = blockNumber;
+        }
         _storeHash(chainId, blockNumber, blockHash);
     }
 
@@ -78,7 +78,6 @@ contract ROFLAdapter is BlockHashAdapter {
         uint256 len = blockNumbers.length;
         if (len == 0) revert EmptyBatch();
         if (len != blockHashes.length) revert MismatchedInputLengths(len, blockHashes.length);
-        if (blockNumbers[0] == 0) revert BlockZeroNotAllowed();
 
         if (lastStoredBlock[chainId] < blockNumbers[len - 1]) {
             lastStoredBlock[chainId] = blockNumbers[len - 1];

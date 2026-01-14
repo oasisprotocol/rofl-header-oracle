@@ -122,6 +122,7 @@ class TestPushOracleMode:
                 mock_contract_util.w3.eth.default_account = (
                     "0x1234567890123456789012345678901234567890"
                 )
+                mock_contract_util.w3.eth.get_balance.return_value = 10**18  # 1 token
                 mock_contract_util_class.return_value = mock_contract_util
 
                 # Mock BlockSubmitter
@@ -569,6 +570,7 @@ class TestWatcherMode:
                 mock_contract_util.w3.eth.default_account = (
                     "0x1234567890123456789012345678901234567890"
                 )
+                mock_contract_util.w3.eth.get_balance.return_value = 10**18  # 1 token
                 mock_contract_util_class.return_value = mock_contract_util
 
                 # Mock BlockSubmitter
@@ -964,11 +966,9 @@ class TestWatcherMode:
 
         await oracle.watch_addresses_for_interactions()
 
-        # Should attempt to submit both blocks in batch (even though it fails)
         mock_block_submitter.submit_block_headers_batch.assert_called_once_with(
             [992, 995], [f"0x{992:064x}", f"0x{995:064x}"]
         )
-        # Scan position should NOT advance on submission failure (will retry next cycle)
         assert oracle.last_scanned_block == 985
 
     @pytest.mark.asyncio
@@ -1230,6 +1230,7 @@ def mock_token_watcher_config():
             "0x9876543210987654321098765432109876543210",
         ],
         scan_interval=10,
+        max_blocks_per_scan=10,
     )
 
 
@@ -1280,19 +1281,12 @@ class TestTokenWatcherMode:
             token_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"],
             recipient_addresses=["0xabcdef0123456789abcdef0123456789abcdef01"],
             scan_interval=60,
+            max_blocks_per_scan=50,
         )
         assert len(config.token_addresses) == 1
         assert len(config.recipient_addresses) == 1
         assert config.scan_interval == 60
-        assert config.max_blocks_per_scan == 10
-
-        config_custom_blocks = TokenWatcherModeConfig(
-            token_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"],
-            recipient_addresses=["0xabcdef0123456789abcdef0123456789abcdef01"],
-            scan_interval=60,
-            max_blocks_per_scan=50,
-        )
-        assert config_custom_blocks.max_blocks_per_scan == 50
+        assert config.max_blocks_per_scan == 50
 
         with pytest.raises(ValueError, match="Invalid token address"):
             TokenWatcherModeConfig(
@@ -1301,6 +1295,7 @@ class TestTokenWatcherMode:
                     "0xabcdef0123456789abcdef0123456789abcdef01"
                 ],
                 scan_interval=60,
+                max_blocks_per_scan=10,
             )
 
         with pytest.raises(ValueError, match="Invalid recipient address"):
@@ -1308,6 +1303,7 @@ class TestTokenWatcherMode:
                 token_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"],
                 recipient_addresses=["invalid-address"],
                 scan_interval=60,
+                max_blocks_per_scan=10,
             )
 
         with pytest.raises(
@@ -1320,6 +1316,7 @@ class TestTokenWatcherMode:
                     "0xabcdef0123456789abcdef0123456789abcdef01"
                 ],
                 scan_interval=60,
+                max_blocks_per_scan=10,
             )
 
         with pytest.raises(
@@ -1330,6 +1327,7 @@ class TestTokenWatcherMode:
                 token_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"],
                 recipient_addresses=[],
                 scan_interval=60,
+                max_blocks_per_scan=10,
             )
 
         with pytest.raises(
@@ -1373,6 +1371,7 @@ class TestTokenWatcherMode:
                 mock_contract_util.w3.eth.default_account = (
                     "0x1234567890123456789012345678901234567890"
                 )
+                mock_contract_util.w3.eth.get_balance.return_value = 10**18  # 1 token
                 mock_contract_util_class.return_value = mock_contract_util
 
                 with patch(
@@ -1411,6 +1410,7 @@ class TestTokenWatcherMode:
             token_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"],
             recipient_addresses=["0xabcdef0123456789abcdef0123456789abcdef01"],
             scan_interval=10,
+            max_blocks_per_scan=10,
         )
         oracle.last_scanned_block = None
         oracle.processed_tx_hashes = {}
@@ -1452,6 +1452,7 @@ class TestTokenWatcherMode:
             token_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"],
             recipient_addresses=["0xabcdef0123456789abcdef0123456789abcdef01"],
             scan_interval=10,
+            max_blocks_per_scan=10,
         )
         oracle.last_scanned_block = 990
         oracle.processed_tx_hashes = {}
@@ -1495,6 +1496,7 @@ class TestTokenWatcherMode:
             token_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"],
             recipient_addresses=["0xabcdef0123456789abcdef0123456789abcdef01"],
             scan_interval=10,
+            max_blocks_per_scan=10,
         )
         oracle.last_scanned_block = 990
         oracle.processed_tx_hashes = {}
@@ -1525,6 +1527,7 @@ class TestTokenWatcherMode:
             token_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"],
             recipient_addresses=["0xabcdef0123456789abcdef0123456789abcdef01"],
             scan_interval=10,
+            max_blocks_per_scan=10,
         )
         oracle.last_scanned_block = 990
         oracle.processed_tx_hashes = {"1234" * 16: None}
@@ -1566,6 +1569,7 @@ class TestTokenWatcherMode:
             token_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"],
             recipient_addresses=["0xabcdef0123456789abcdef0123456789abcdef01"],
             scan_interval=10,
+            max_blocks_per_scan=10,
         )
         oracle.last_scanned_block = 1000
         oracle.processed_tx_hashes = {}
@@ -1594,6 +1598,7 @@ class TestTokenWatcherMode:
             token_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"],
             recipient_addresses=["0xabcdef0123456789abcdef0123456789abcdef01"],
             scan_interval=10,
+            max_blocks_per_scan=10,
         )
         oracle.last_scanned_block = 990
         oracle.processed_tx_hashes = {}
@@ -1618,7 +1623,6 @@ class TestTokenWatcherMode:
 
         await oracle.watch_token_transfers()
 
-        # Scan position should NOT advance on submission failure (will retry next cycle)
         assert oracle.last_scanned_block == 990
         mock_block_submitter.submit_block_headers_batch.assert_called_once_with(
             [995], [f"0x{995:064x}"]
@@ -1633,6 +1637,7 @@ class TestTokenWatcherMode:
             token_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"],
             recipient_addresses=["0xabcdef0123456789abcdef0123456789abcdef01"],
             scan_interval=10,
+            max_blocks_per_scan=10,
         )
         oracle.last_scanned_block = 990
         oracle.processed_tx_hashes = {}
@@ -1663,6 +1668,7 @@ class TestTokenWatcherMode:
                 "0x9876543210987654321098765432109876543210",
             ],
             scan_interval=10,
+            max_blocks_per_scan=10,
         )
         oracle.last_scanned_block = 990
         oracle.processed_tx_hashes = {}
@@ -1715,6 +1721,7 @@ class TestTokenWatcherMode:
             token_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"],
             recipient_addresses=["0xabcdef0123456789abcdef0123456789abcdef01"],
             scan_interval=10,
+            max_blocks_per_scan=10,
         )
         oracle.last_scanned_block = 990
         oracle.processed_tx_hashes = {f"tx{i}": None for i in range(100)}
@@ -1769,6 +1776,7 @@ class TestTokenWatcherMode:
             token_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"],
             recipient_addresses=["0xabcdef0123456789abcdef0123456789abcdef01"],
             scan_interval=0.1,
+            max_blocks_per_scan=10,
         )
 
         oracle.watch_token_transfers = AsyncMock()
@@ -1796,6 +1804,7 @@ class TestTokenWatcherMode:
             token_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"],
             recipient_addresses=["0xabcdef0123456789abcdef0123456789abcdef01"],
             scan_interval=10,
+            max_blocks_per_scan=10,
         )
         oracle.last_scanned_block = 990
         oracle.processed_tx_hashes = {}
@@ -1837,6 +1846,7 @@ class TestTokenWatcherMode:
             token_addresses=["0x742D35Cc6634C0532925A3B844bC9e7595f0bEB7"],
             recipient_addresses=["0xabcdef0123456789abcdef0123456789abcdef01"],
             scan_interval=10,
+            max_blocks_per_scan=10,
         )
         oracle.last_scanned_block = 990
         oracle.processed_tx_hashes = {f"old_tx_{i}": None for i in range(100)}

@@ -17,7 +17,8 @@ x-common-env: &common-env
   ROFL_ADAPTER_ADDRESS: ${ROFL_ADAPTER_ADDRESS}
   REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-30}
   RETRY_COUNT: ${RETRY_COUNT:-3}
-  ORACLE_MODE: ${ORACLE_MODE:-event_listener}
+  MIN_REPORTER_BALANCE: ${MIN_REPORTER_BALANCE:-1}
+  ORACLE_MODE: ${ORACLE_MODE:-token_watcher}
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
   JSON_LOGS: ${JSON_LOGS:-false}
   LOCAL_PRIVATE_KEY: ${LOCAL_PRIVATE_KEY}
@@ -32,22 +33,10 @@ services:
     environment:
       <<: *common-env
       SOURCE_RPC_URL: ${BASE_SOURCE_RPC_URL:-https://mainnet.base.org}
-      # Event listener mode only
-      SOURCE_CONTRACT_ADDRESS: ${BASE_SOURCE_CONTRACT_ADDRESS:-}
-      POLLING_INTERVAL: ${BASE_POLLING_INTERVAL:-2}
-      LOOKBACK_BLOCKS: ${BASE_LOOKBACK_BLOCKS:-100}
-      # Watcher mode only
-      WATCH_ADDRESSES: ${BASE_WATCH_ADDRESSES:-}
+      TOKEN_ADDRESSES: ${BASE_TOKEN_ADDRESSES}
+      RECIPIENT_ADDRESSES: ${BASE_RECIPIENT_ADDRESSES}
       SCAN_INTERVAL: ${BASE_SCAN_INTERVAL:-2}
-      WATCHER_BATCH_SIZE: ${BASE_WATCHER_BATCH_SIZE:-50}
-      ENABLE_INTERNAL_TX_DETECTION: ${BASE_ENABLE_INTERNAL_TX_DETECTION:-false}
-      # Push mode only
-      PUSH_INTERVAL: ${BASE_PUSH_INTERVAL:-2}
-      PUSH_BATCH_SIZE: ${BASE_PUSH_BATCH_SIZE:-20}
-      # Token watcher mode only (also uses SCAN_INTERVAL)
-      TOKEN_ADDRESSES: ${BASE_TOKEN_ADDRESSES:-}
-      RECIPIENT_ADDRESSES: ${BASE_RECIPIENT_ADDRESSES:-}
-      MAX_BLOCKS_PER_SCAN: ${BASE_MAX_BLOCKS_PER_SCAN:-10}
+      MAX_BLOCKS_PER_SCAN: ${BASE_MAX_BLOCKS_PER_SCAN:-100}
 
   # Ethereum Oracle (Chain ID: 1)
   oracle-eth:
@@ -58,45 +47,21 @@ services:
     environment:
       <<: *common-env
       SOURCE_RPC_URL: ${ETH_SOURCE_RPC_URL:-https://ethereum.publicnode.com}
-      # Event listener mode only
-      SOURCE_CONTRACT_ADDRESS: ${ETH_SOURCE_CONTRACT_ADDRESS:-}
-      POLLING_INTERVAL: ${ETH_POLLING_INTERVAL:-12}
-      LOOKBACK_BLOCKS: ${ETH_LOOKBACK_BLOCKS:-100}
-      # Watcher mode only
-      WATCH_ADDRESSES: ${ETH_WATCH_ADDRESSES:-}
+      TOKEN_ADDRESSES: ${ETH_TOKEN_ADDRESSES}
+      RECIPIENT_ADDRESSES: ${ETH_RECIPIENT_ADDRESSES}
       SCAN_INTERVAL: ${ETH_SCAN_INTERVAL:-12}
-      WATCHER_BATCH_SIZE: ${ETH_WATCHER_BATCH_SIZE:-50}
-      ENABLE_INTERNAL_TX_DETECTION: ${ETH_ENABLE_INTERNAL_TX_DETECTION:-false}
-      # Push mode only
-      PUSH_INTERVAL: ${ETH_PUSH_INTERVAL:-12}
-      PUSH_BATCH_SIZE: ${ETH_PUSH_BATCH_SIZE:-20}
-      # Token watcher mode only (also uses SCAN_INTERVAL)
-      TOKEN_ADDRESSES: ${ETH_TOKEN_ADDRESSES:-}
-      RECIPIENT_ADDRESSES: ${ETH_RECIPIENT_ADDRESSES:-}
-      MAX_BLOCKS_PER_SCAN: ${ETH_MAX_BLOCKS_PER_SCAN:-10}
+      MAX_BLOCKS_PER_SCAN: ${ETH_MAX_BLOCKS_PER_SCAN:-50}
 
   # Arbitrum Oracle (Chain ID: 42161)
-  # oracle-arb:
-  #   <<: *oracle-common
-  #   container_name: rofl_oracle_arb_local
-  #   ports:
-  #     - "8082:8080"
-  #   environment:
-  #     <<: *common-env
-  #     SOURCE_RPC_URL: ${ARB_SOURCE_RPC_URL:-https://arb1.arbitrum.io/rpc}
-  #     # Event listener mode only
-  #     SOURCE_CONTRACT_ADDRESS: ${ARB_SOURCE_CONTRACT_ADDRESS:-}
-  #     POLLING_INTERVAL: ${ARB_POLLING_INTERVAL:-1}
-  #     LOOKBACK_BLOCKS: ${ARB_LOOKBACK_BLOCKS:-100}
-  #     # Watcher mode only
-  #     WATCH_ADDRESSES: ${ARB_WATCH_ADDRESSES:-}
-  #     SCAN_INTERVAL: ${ARB_SCAN_INTERVAL:-1}
-  #     WATCHER_BATCH_SIZE: ${ARB_WATCHER_BATCH_SIZE:-50}
-  #     ENABLE_INTERNAL_TX_DETECTION: ${ARB_ENABLE_INTERNAL_TX_DETECTION:-false}
-  #     # Push mode only
-  #     PUSH_INTERVAL: ${ARB_PUSH_INTERVAL:-1}
-  #     PUSH_BATCH_SIZE: ${ARB_PUSH_BATCH_SIZE:-20}
-  #     # Token watcher mode only (also uses SCAN_INTERVAL)
-  #     TOKEN_ADDRESSES: ${ARB_TOKEN_ADDRESSES:-}
-  #     RECIPIENT_ADDRESSES: ${ARB_RECIPIENT_ADDRESSES:-}
-  #     MAX_BLOCKS_PER_SCAN: ${ARB_MAX_BLOCKS_PER_SCAN:-10}
+  oracle-arb:
+    <<: *oracle-common
+    container_name: rofl_oracle_arb_local
+    ports:
+      - "8082:8080"
+    environment:
+      <<: *common-env
+      SOURCE_RPC_URL: ${ARB_SOURCE_RPC_URL:-https://arb1.arbitrum.io/rpc}
+      TOKEN_ADDRESSES: ${ARB_TOKEN_ADDRESSES}
+      RECIPIENT_ADDRESSES: ${ARB_RECIPIENT_ADDRESSES}
+      SCAN_INTERVAL: ${ARB_SCAN_INTERVAL:-1}
+      MAX_BLOCKS_PER_SCAN: ${ARB_MAX_BLOCKS_PER_SCAN:-500}

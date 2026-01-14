@@ -4,6 +4,7 @@ This module handles the submission of block headers to the ROFLAdapter contract
 on Oasis Sapphire, supporting both local (testing) and production (ROFL) modes.
 """
 
+import asyncio
 import logging
 from typing import Any
 
@@ -44,6 +45,7 @@ class BlockSubmitter:
         request_timeout: int = 30,
         circuit_breaker: CircuitBreaker | None = None,
         retry_config: RetryConfig | None = None,
+        min_reporter_balance: float = 1,
     ) -> None:
         """
         Initialize the BlockSubmitter.
@@ -56,6 +58,7 @@ class BlockSubmitter:
             request_timeout: Timeout for transaction receipts in seconds (default: 30)
             circuit_breaker: Optional circuit breaker for resilience
             retry_config: Optional retry configuration
+            min_reporter_balance: Minimum required balance in native tokens (default: 0.001)
         """
         self.contract_util: ContractUtility = contract_util
         self.rofl_util: RoflUtility | None = rofl_util
@@ -64,6 +67,7 @@ class BlockSubmitter:
         self.request_timeout: int = request_timeout
         self.circuit_breaker = circuit_breaker
         self.retry_config = retry_config or RetryConfig()
+        self.min_reporter_balance = min_reporter_balance
 
         contract_name = "ROFLAdapter"
         self.adapter_abi: list[dict[str, Any]] = (
@@ -74,12 +78,50 @@ class BlockSubmitter:
             address=self.contract_address, abi=self.adapter_abi
         )
 
-        if mode := ("ROFL production" if rofl_util else "local testing"):
-            logger.info(f"BlockSubmitter initialized in {mode} mode")
-            logger.info(f"  Source Chain ID: {source_chain_id}")
-            logger.info(
-                f"  Adapter Contract: {contract_name} at {contract_address}"
+        mode = "ROFL production" if rofl_util else "local testing"
+        logger.info(f"BlockSubmitter initialized in {mode} mode")
+        logger.info(f"  Source Chain ID: {source_chain_id}")
+        logger.info(f"  Adapter Contract: {contract_name} at {contract_address}")
+
+    def check_balance(self) -> tuple[int, bool]:
+        """
+        Check reporter balance and return (balance_wei, is_sufficient).
+
+        Returns:
+            Tuple of (balance in wei, whether balance meets minimum threshold)
+        """
+        address = self.contract_util.w3.eth.default_account
+        balance = self.contract_util.w3.eth.get_balance(address)
+        min_balance_wei = int(self.min_reporter_balance * 10**18)
+        return balance, balance >= min_balance_wei
+
+    async def _wait_for_balance(self) -> None:
+        """
+        Pause and wait until reporter has sufficient balance.
+        Called when balance drops below minimum during operation.
+        """
+        check_interval = 30  # seconds
+        address = self.contract_util.w3.eth.default_account
+        min_balance_wei = int(self.min_reporter_balance * 10**18)
+
+        while True:
+            balance = self.contract_util.w3.eth.get_balance(address)
+            balance_native = balance / 10**18
+
+            if balance >= min_balance_wei:
+                logger.info(
+                    f"Reporter {address} balance restored: {balance_native:.6f} native tokens. Resuming..."
+                )
+                return
+
+            logger.warning(
+                f"⚠️  PAUSED - Insufficient balance!\n"
+                f"    Reporter: {address}\n"
+                f"    Current: {balance_native:.6f} native tokens\n"
+                f"    Minimum: {self.min_reporter_balance:.6f} native tokens\n"
+                f"    Waiting {check_interval}s before retry..."
             )
+            await asyncio.sleep(check_interval)
 
     async def get_registered_reporter(self) -> str | None:
         """
@@ -203,8 +245,19 @@ class BlockSubmitter:
         async def _submit() -> bool:
             try:
                 mode_label = "ROFL" if self.rofl_util else "LOCAL"
+                reporter = self.contract_util.w3.eth.default_account
+
+                # Check balance before submission
+                balance, is_sufficient = self.check_balance()
+                if not is_sufficient:
+                    logger.warning(
+                        f"Low balance for reporter {reporter}: {balance / 10**18:.6f} native tokens. "
+                        f"Minimum required: {self.min_reporter_balance}. Pausing..."
+                    )
+                    await self._wait_for_balance()
+
                 logger.info(
-                    f"{mode_label} MODE: Submitting {len(block_numbers)} blocks in batch"
+                    f"{mode_label} MODE: Submitting {len(block_numbers)} blocks in batch (reporter: {reporter})"
                 )
 
                 batch_gas = GAS_BATCH_BASE + (GAS_PER_HEADER * len(block_numbers))
@@ -286,7 +339,18 @@ class BlockSubmitter:
         async def _submit() -> bool:
             try:
                 mode_label = "ROFL" if self.rofl_util else "LOCAL"
-                logger.info(f"{mode_label} MODE: Submitting single block header")
+                reporter = self.contract_util.w3.eth.default_account
+
+                # Check balance before submission
+                balance, is_sufficient = self.check_balance()
+                if not is_sufficient:
+                    logger.warning(
+                        f"Low balance for reporter {reporter}: {balance / 10**18:.6f} native tokens. "
+                        f"Minimum required: {self.min_reporter_balance}. Pausing..."
+                    )
+                    await self._wait_for_balance()
+
+                logger.info(f"{mode_label} MODE: Submitting single block header (reporter: {reporter})")
 
                 tx_hash = self.contract.functions.storeBlockHeader(
                     self.source_chain_id, block_number, block_hash

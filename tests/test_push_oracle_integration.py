@@ -96,6 +96,7 @@ class TestPushOracleMode:
                 mock_contract_util.w3.eth.default_account = (
                     "0x1234567890123456789012345678901234567890"
                 )
+                mock_contract_util.w3.eth.get_balance.return_value = 10**18  # 1 token
                 mock_contract_util_class.return_value = mock_contract_util
 
                 # Mock BlockSubmitter

@@ -17,6 +17,9 @@ def mock_contract_util():
     mock.w3 = MagicMock()
     mock.w3.eth.gas_price = Wei(1000000000)  # 1 gwei
     mock.w3.eth.wait_for_transaction_receipt = MagicMock()
+    # Mock balance check - return sufficient balance (1 ETH in wei)
+    mock.w3.eth.get_balance = MagicMock(return_value=10**18)
+    mock.w3.eth.default_account = "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb7"
     return mock
 
 
