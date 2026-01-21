@@ -40,6 +40,14 @@ class HeaderOracle:
     and submits them to the ROFLAdapter contract on Oasis Sapphire.
     """
 
+    last_heartbeat_time: float | None = None
+
+    @property
+    def _log_prefix(self) -> str:
+        """Log prefix with chain ID for multi-chain disambiguation."""
+        chain_id = getattr(self, "source_chain_id", None)
+        return f"[chain:{chain_id}]" if chain_id else "[chain:?]"
+
     @classmethod
     async def create(cls, config: OracleConfig) -> "HeaderOracle":
         """
@@ -101,32 +109,6 @@ class HeaderOracle:
                 port=8080, oracle_instance=self
             )
 
-            if not config.local_mode:
-                # Initialize ROFL utility
-                logger.debug("Initializing ROFL utility...")
-                self.rofl_utility = RoflUtility()
-
-                # Generate/fetch oracle signing key
-                logger.info("Generating oracle signing key from ROFL...")
-                self.secret = await self.rofl_utility.fetch_key(
-                    "rofl-oracle-signer"
-                )
-                logger.info("Oracle signing key generated successfully")
-            else:
-                # Use local private key for testing
-                logger.debug("Using local private key (LOCAL MODE)")
-                self.secret = config.local_private_key
-                self.rofl_utility = None
-                logger.debug("Local private key loaded")
-
-            # Initialize contract utility with secret for both modes
-            logger.debug("Initializing contract utility with signing key...")
-            self.contract_utility = ContractUtility(
-                config.common_config.target_rpc_url, self.secret
-            )
-            logger.debug("Contract utility initialized with signing capability")
-
-            # Connect to source chain for block fetching
             logger.debug(
                 f"Connecting to source chain at {config.common_config.source_rpc_url}"
             )
@@ -143,13 +125,41 @@ class HeaderOracle:
                     f"Failed to connect to source chain at {config.common_config.source_rpc_url}"
                 )
 
-            # Fetch chain ID from the connected RPC endpoint and update config
             logger.debug("Fetching chain ID...")
             chain_id = self.source_w3.eth.chain_id
-
-            # Update config with chain ID
             self.config = self.config.with_chain_id(chain_id)
             self.source_chain_id = chain_id
+            logger.info(f"Connected to source chain with ID: {chain_id}")
+
+            if not config.local_mode:
+                logger.debug("Initializing ROFL utility...")
+                self.rofl_utility = RoflUtility()
+
+                # Chain-specific key derivation to avoid nonce collisions
+                key_id = f"rofl-oracle-signer-{chain_id}"
+                logger.info(f"Deriving chain-specific signing key: {key_id}")
+                self.secret = await self.rofl_utility.fetch_key(key_id)
+                logger.info("Chain-specific signing key generated successfully")
+            else:
+                # Use local private key for testing
+                logger.debug("Using local private key (LOCAL MODE)")
+                self.secret = config.local_private_key
+                self.rofl_utility = None
+                logger.debug("Local private key loaded")
+
+            logger.debug("Initializing contract utility with signing key...")
+            self.contract_utility = ContractUtility(
+                config.common_config.target_rpc_url, self.secret
+            )
+            logger.debug("Contract utility initialized with signing capability")
+
+            # Check reporter balance before proceeding
+            reporter_address = self.contract_utility.w3.eth.default_account
+            logger.info(f"Reporter address: {reporter_address}")
+            await self._wait_for_sufficient_balance(
+                reporter_address,
+                config.common_config.min_reporter_balance
+            )
 
             # Initialize block submitter
             logger.debug("Initializing block submitter...")
@@ -161,30 +171,33 @@ class HeaderOracle:
                 request_timeout=config.common_config.request_timeout,
                 circuit_breaker=self.target_rpc_circuit,
                 retry_config=self.retry_config,
+                min_reporter_balance=config.common_config.min_reporter_balance,
             )
             logger.debug("Block submitter initialized")
 
-            # Register reporter address if in ROFL mode
+            # Register chain-specific reporter if in ROFL mode
             if not config.local_mode:
                 reporter_address = self.contract_utility.w3.eth.default_account
-                logger.info(f"Reporter address: {reporter_address}")
+                logger.info(
+                    f"Chain {self.source_chain_id} reporter address: {reporter_address}"
+                )
 
-                # Check if reporter is already registered
+                # Check if this chain's reporter is already registered
                 current_reporter = (
                     await self.block_submitter.get_registered_reporter()
                 )
 
                 if current_reporter != reporter_address:
                     logger.info(
-                        "Registering reporter address with ROFLAdapter..."
+                        f"Registering reporter for chain {self.source_chain_id}..."
                     )
                     await self.block_submitter.register_reporter()
                     logger.info(
-                        f"Reporter address {reporter_address} registered successfully"
+                        f"Reporter {reporter_address} registered for chain {self.source_chain_id}"
                     )
                 else:
                     logger.info(
-                        f"Reporter address {reporter_address} already registered"
+                        f"Reporter already registered for chain {self.source_chain_id}"
                     )
 
             # Initialize event processor
@@ -222,6 +235,7 @@ class HeaderOracle:
                 self.last_scanned_block: int | None = None
                 self.processed_tx_hashes: dict[str, None] = {}
                 self.max_tx_cache_size = 10000
+                self.last_heartbeat_time: float | None = None
             elif config.oracle_mode == OracleMode.WATCHER:
                 assert isinstance(config.mode_config, WatcherModeConfig)
                 logger.info(
@@ -264,6 +278,45 @@ class HeaderOracle:
             logger.error(f"HeaderOracle initialization failed: {e}")
             logger.error(f"Exception type: {type(e).__name__}", exc_info=True)
             raise
+
+    async def _wait_for_sufficient_balance(
+        self, address: str, min_balance: float
+    ) -> None:
+        """
+        Check reporter balance and wait if insufficient.
+        Blocks startup until the reporter has enough funds.
+
+        Args:
+            address: Reporter wallet address
+            min_balance: Minimum required balance in native tokens
+        """
+        check_interval = 30  # seconds
+        min_balance_wei = int(min_balance * 10**18)
+
+        while True:
+            try:
+                balance = self.contract_utility.w3.eth.get_balance(address)
+                balance_native = balance / 10**18
+
+                if balance >= min_balance_wei:
+                    logger.info(
+                        f"Reporter {address} has sufficient balance: {balance_native:.6f} native tokens"
+                    )
+                    return
+
+                logger.warning(
+                    f"⚠️  Insufficient reporter balance!\n"
+                    f"    Address: {address}\n"
+                    f"    Current: {balance_native:.6f} native tokens\n"
+                    f"    Minimum: {min_balance:.6f} native tokens\n"
+                    f"    Please fund this address to continue.\n"
+                    f"    Checking again in {check_interval}s..."
+                )
+                await sleep(check_interval)
+
+            except Exception as e:
+                logger.error(f"Error checking balance for {address}: {e}")
+                await sleep(check_interval)
 
     async def fetch_block_by_number(
         self, block_number: int
@@ -434,7 +487,6 @@ class HeaderOracle:
             latest_block_number = self.source_w3.eth.block_number
             assert isinstance(self.config.mode_config, WatcherModeConfig)
 
-            # Check if heartbeat is due (first run or interval elapsed)
             current_time = time.time()
             heartbeat_interval = self.config.mode_config.heartbeat_interval_seconds
             heartbeat_due = (
@@ -477,7 +529,7 @@ class HeaderOracle:
 
             num_blocks = end_block - start_block + 1
             logger.info(
-                f"Scanning {num_blocks} blocks ({start_block} to {end_block}) for watched address interactions"
+                f"{self._log_prefix} Scanning {num_blocks} blocks ({start_block}-{end_block})"
             )
 
             blocks_with_interactions = []
@@ -489,13 +541,13 @@ class HeaderOracle:
                     block_number - start_block
                 ) % 10 == 0 and block_number != start_block:
                     logger.info(
-                        f"  Progress: scanned {block_number - start_block}/{num_blocks} blocks..."
+                        f"{self._log_prefix} Progress: {block_number - start_block}/{num_blocks} blocks"
                     )
 
                 try:
                     if await self._check_block_for_interactions(block_number):
                         logger.info(
-                            f"Interaction detected in block {block_number}"
+                            f"{self._log_prefix} Interaction in block {block_number}"
                         )
 
                         block = await self.fetch_block_by_number(block_number)
@@ -523,10 +575,12 @@ class HeaderOracle:
                     logger.error(f"Error processing block {block_number}: {e}")
                     break  # Stop and retry this block next cycle
 
+            submission_succeeded = True
+
             # Submit all blocks with interactions in a single batch
             if blocks_with_interactions:
                 logger.info(
-                    f"Submitting batch of {len(blocks_with_interactions)} blocks with interactions"
+                    f"{self._log_prefix} Submitting {len(blocks_with_interactions)} blocks"
                 )
                 success = await self.block_submitter.submit_block_headers_batch(
                     blocks_with_interactions, block_hashes_to_submit
@@ -534,24 +588,24 @@ class HeaderOracle:
 
                 if success:
                     logger.info(
-                        f"Successfully pushed {len(blocks_with_interactions)} block headers with interactions"
+                        f"{self._log_prefix} Submitted {len(blocks_with_interactions)} block headers"
                     )
                     # Reset heartbeat timer on successful activity submission
                     self.last_heartbeat_time = time.time()
+                    submission_succeeded = True
                 else:
                     logger.error(
-                        f"Failed to push batch of {len(blocks_with_interactions)} block headers"
+                        f"{self._log_prefix} Submission failed, will retry"
                     )
+                    submission_succeeded = False
 
-            # Submit heartbeat if no interactions found and heartbeat is due
             elif heartbeat_due and last_successful_block >= start_block:
-                # Use the last successfully scanned block as the heartbeat checkpoint
+                # Heartbeat: use last scanned block as checkpoint
                 heartbeat_block = last_successful_block
                 logger.info(
-                    f"No interactions found, submitting heartbeat block {heartbeat_block}"
+                    f"{self._log_prefix} Heartbeat block {heartbeat_block}"
                 )
 
-                # Fetch the block to get its hash
                 block = await self.fetch_block_by_number(heartbeat_block)
                 if block:
                     block_hash_hex = self._normalize_block_hash(block.get("hash"))
@@ -581,22 +635,27 @@ class HeaderOracle:
                 self.last_heartbeat_time = time.time()
 
             elif heartbeat_due:
-                # Heartbeat due but scan failed before processing any blocks
-                logger.warning(
-                    "Heartbeat due but scan failed before processing any blocks"
+                # No new blocks scanned - either chain idle or RPC issue
+                logger.info(
+                    f"{self._log_prefix} Heartbeat skipped: no new blocks to checkpoint"
                 )
                 self.last_heartbeat_time = time.time()
 
-            # Update scan position to last successfully processed block
-            if last_successful_block >= start_block:
+            # Update scan position only if submission succeeded (or no submission needed)
+            if submission_succeeded and last_successful_block >= start_block:
                 self.last_scanned_block = last_successful_block
+            elif not submission_succeeded:
+                logger.warning(
+                    f"Keeping scan position at {self.last_scanned_block} due to submission failure"
+                )
+
             scanned_count = (
                 last_successful_block - start_block + 1
                 if last_successful_block >= start_block
                 else 0
             )
             logger.info(
-                f"Scan complete: checked {scanned_count}/{num_blocks} blocks, found {len(blocks_with_interactions)} interaction(s)"
+                f"{self._log_prefix} Scan complete: {scanned_count}/{num_blocks} blocks, {len(blocks_with_interactions)} interactions"
             )
 
         except Exception as e:
@@ -755,13 +814,25 @@ class HeaderOracle:
             latest_block_number = self.source_w3.eth.block_number
             assert isinstance(self.config.mode_config, TokenWatcherModeConfig)
 
+            current_time = time.time()
+            heartbeat_interval = self.config.mode_config.heartbeat_interval_seconds
+            heartbeat_due = (
+                self.last_heartbeat_time is None
+                or (current_time - self.last_heartbeat_time) >= heartbeat_interval
+            )
+
             if self.last_scanned_block is not None:
                 start_block = self.last_scanned_block + 1
             else:
                 start_block = latest_block_number
-                logger.info(f"First run: starting from block {start_block}")
+                logger.info(f"{self._log_prefix} First run: starting from block {start_block}")
 
             if start_block > latest_block_number:
+                if heartbeat_due:
+                    logger.info(
+                        f"{self._log_prefix} Heartbeat skipped: no new blocks to checkpoint"
+                    )
+                    self.last_heartbeat_time = time.time()
                 return
 
             end_block = min(
@@ -770,69 +841,68 @@ class HeaderOracle:
             )
             num_blocks = end_block - start_block + 1
             logger.info(
-                f"Scanning {num_blocks} blocks ({start_block}-{end_block})"
+                f"{self._log_prefix} Scanning {num_blocks} blocks ({start_block}-{end_block})"
             )
 
             blocks_with_transfers = set()
 
+            # Build recipient topics array for OR matching (reduces RPC calls from O(n*m) to O(n))
+            recipient_topics = [
+                "0x" + addr[2:].lower().zfill(64)
+                for addr in self.config.mode_config.recipient_addresses
+            ]
+
             for token_addr in self.config.mode_config.token_addresses:
-                for (
-                    recipient_addr
-                ) in self.config.mode_config.recipient_addresses:
-                    recipient_topic = "0x" + recipient_addr[2:].lower().zfill(
-                        64
+                filter_params = {
+                    "fromBlock": hex(start_block),
+                    "toBlock": hex(end_block),
+                    "address": token_addr,
+                    "topics": [
+                        TRANSFER_EVENT_SIGNATURE,
+                        None,
+                        recipient_topics,  # Array = OR matching across recipients
+                    ],
+                }
+
+                try:
+                    logs = self.source_w3.eth.get_logs(filter_params)
+
+                    for log in logs:
+                        tx_hash = log.get("transactionHash")
+                        block_num = log.get("blockNumber")
+
+                        if tx_hash and block_num:
+                            tx_hash_str = (
+                                tx_hash.hex()
+                                if isinstance(tx_hash, bytes)
+                                else tx_hash
+                            )
+
+                            if tx_hash_str in self.processed_tx_hashes:
+                                continue
+
+                            self.processed_tx_hashes[tx_hash_str] = None
+
+                            if (
+                                len(self.processed_tx_hashes)
+                                > self.max_tx_cache_size
+                            ):
+                                keys_to_remove = list(
+                                    self.processed_tx_hashes.keys()
+                                )[: self.max_tx_cache_size // 2]
+                                for key in keys_to_remove:
+                                    del self.processed_tx_hashes[key]
+
+                            blocks_with_transfers.add(block_num)
+                            logger.info(
+                                f"{self._log_prefix} Transfer: block={block_num}, tx={tx_hash_str[:18]}..."
+                            )
+
+                except Exception as e:
+                    logger.error(
+                        f"{self._log_prefix} Query failed for {token_addr}, aborting scan to retry: {e}"
                     )
-
-                    filter_params = {
-                        "fromBlock": hex(start_block),
-                        "toBlock": hex(end_block),
-                        "address": token_addr,
-                        "topics": [
-                            TRANSFER_EVENT_SIGNATURE,
-                            None,
-                            recipient_topic,
-                        ],
-                    }
-
-                    try:
-                        logs = self.source_w3.eth.get_logs(filter_params)
-
-                        for log in logs:
-                            tx_hash = log.get("transactionHash")
-                            block_num = log.get("blockNumber")
-
-                            if tx_hash and block_num:
-                                tx_hash_str = (
-                                    tx_hash.hex()
-                                    if isinstance(tx_hash, bytes)
-                                    else tx_hash
-                                )
-
-                                if tx_hash_str in self.processed_tx_hashes:
-                                    continue
-
-                                self.processed_tx_hashes[tx_hash_str] = None
-
-                                if (
-                                    len(self.processed_tx_hashes)
-                                    > self.max_tx_cache_size
-                                ):
-                                    keys_to_remove = list(
-                                        self.processed_tx_hashes.keys()
-                                    )[: self.max_tx_cache_size // 2]
-                                    for key in keys_to_remove:
-                                        del self.processed_tx_hashes[key]
-
-                                blocks_with_transfers.add(block_num)
-                                logger.info(
-                                    f"Transfer: block={block_num}, tx={tx_hash_str}"
-                                )
-
-                    except Exception as e:
-                        logger.warning(
-                            f"Error querying logs for {token_addr}: {e}"
-                        )
-                        continue
+                    return
 
             if blocks_with_transfers:
                 block_hashes_to_submit = []
@@ -855,12 +925,49 @@ class HeaderOracle:
                     )
                     if success:
                         logger.info(
-                            f"Submitted {len(sorted_blocks)} block headers"
+                            f"{self._log_prefix} Submitted {len(sorted_blocks)} block headers"
                         )
+                        self.last_scanned_block = end_block
+                        # Reset heartbeat timer after successful submission
+                        self.last_heartbeat_time = time.time()
+                    else:
+                        logger.warning(
+                            f"{self._log_prefix} Submission failed, will retry {sorted_blocks[0]}-{sorted_blocks[-1]}"
+                        )
+                else:
+                    logger.warning(
+                        f"Could not fetch all block hashes "
+                        f"({len(block_hashes_to_submit)}/{len(sorted_blocks)}) - will retry"
+                    )
+            elif heartbeat_due and self.last_scanned_block is not None:
+                # No transfers but heartbeat due - submit checkpoint (skip on first run)
+                heartbeat_block = end_block
+                logger.info(
+                    f"{self._log_prefix} Heartbeat: submitting block {heartbeat_block} as checkpoint"
+                )
+                block = await self.fetch_block_by_number(heartbeat_block)
+                if block:
+                    block_hash_hex = self._normalize_block_hash(block.get("hash"))
+                    if block_hash_hex is not None:
+                        success = await self.block_submitter.submit_block_header(
+                            heartbeat_block, block_hash_hex
+                        )
+                        if success:
+                            logger.info(
+                                f"{self._log_prefix} Heartbeat: stored block {heartbeat_block}"
+                            )
+                        else:
+                            logger.warning(
+                                f"{self._log_prefix} Heartbeat submission failed for block {heartbeat_block}"
+                            )
+                self.last_scanned_block = end_block
+                self.last_heartbeat_time = time.time()
+            else:
+                # No transfers found, no heartbeat due - safe to advance scan position
+                self.last_scanned_block = end_block
 
-            self.last_scanned_block = end_block
             logger.info(
-                f"Scan complete: {len(blocks_with_transfers)} transfer(s) in {num_blocks} blocks"
+                f"{self._log_prefix} Scan complete: {len(blocks_with_transfers)} transfers in {num_blocks} blocks"
             )
 
         except Exception as e:

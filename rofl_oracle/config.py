@@ -182,25 +182,20 @@ class WatcherModeConfig:
                 f"Heartbeat interval too high (max 86400s/24h), got {self.heartbeat_interval_seconds}"
             )
 
-        if self.watch_addresses is None or len(self.watch_addresses) == 0:
+        if not isinstance(self.watch_addresses, list):
+            raise ValueError("Watch addresses must be a list")
+
+        if len(self.watch_addresses) == 0:
             raise ValueError("Watcher mode requires at least one watch address")
 
-        # Validate watch addresses if provided
-        if self.watch_addresses is not None:
-            if not isinstance(self.watch_addresses, list):
-                raise ValueError("Watch addresses must be a list")
+        # Checksum all watch addresses
+        checksummed_addresses = []
+        for addr in self.watch_addresses:
+            if not Web3.is_address(addr):
+                raise ValueError(f"Invalid watch address: {addr}")
+            checksummed_addresses.append(Web3.to_checksum_address(addr))
 
-            if len(self.watch_addresses) == 0:
-                raise ValueError("Watch addresses list cannot be empty")
-
-            # Checksum all watch addresses
-            checksummed_addresses = []
-            for addr in self.watch_addresses:
-                if not Web3.is_address(addr):
-                    raise ValueError(f"Invalid watch address: {addr}")
-                checksummed_addresses.append(Web3.to_checksum_address(addr))
-
-            object.__setattr__(self, "watch_addresses", checksummed_addresses)
+        object.__setattr__(self, "watch_addresses", checksummed_addresses)
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,12 +209,14 @@ class TokenWatcherModeConfig:
     :cvar recipient_addresses: List of recipient addresses to watch for (env: RECIPIENT_ADDRESSES, comma-separated)
     :cvar scan_interval: Seconds between scanning for token transfers (env: SCAN_INTERVAL)
     :cvar max_blocks_per_scan: Maximum number of blocks to scan per iteration (env: MAX_BLOCKS_PER_SCAN, default: 10)
+    :cvar heartbeat_interval_seconds: Seconds between heartbeat submissions when no activity (env: HEARTBEAT_INTERVAL_SECONDS)
     """
 
     token_addresses: list[str]
     recipient_addresses: list[str]
     scan_interval: int
-    max_blocks_per_scan: int = 10
+    max_blocks_per_scan: int
+    heartbeat_interval_seconds: int = 3600
 
     def __post_init__(self) -> None:
         """Validate token watcher configuration."""
@@ -239,6 +236,15 @@ class TokenWatcherModeConfig:
         if self.max_blocks_per_scan > 10000:
             raise ValueError(
                 f"Max blocks per scan too high (max 10000), got {self.max_blocks_per_scan}"
+            )
+
+        if self.heartbeat_interval_seconds <= 0:
+            raise ValueError(
+                f"Heartbeat interval must be positive, got {self.heartbeat_interval_seconds}"
+            )
+        if self.heartbeat_interval_seconds > 86400:
+            raise ValueError(
+                f"Heartbeat interval too high (max 86400s/24h), got {self.heartbeat_interval_seconds}"
             )
 
         if not self.token_addresses or len(self.token_addresses) == 0:
@@ -288,6 +294,7 @@ class CommonConfig:
     request_timeout: int
     retry_count: int
     target_contract_address: str
+    min_reporter_balance: float = 1  # Minimum balance in native tokens (e.g., ROSE)
 
     def __post_init__(self) -> None:
         """Validate common configuration."""
@@ -312,10 +319,6 @@ class CommonConfig:
         if not self.source_rpc_url:
             raise ValueError("Source RPC URL is required (SOURCE_RPC_URL)")
 
-        # Validate RPC URL
-        if not self.source_rpc_url:
-            raise ValueError("Source RPC URL is required (SOURCE_RPC_URL)")
-
         parsed = urlparse(self.source_rpc_url)
         if parsed.scheme not in ("http", "https", "ws", "wss"):
             raise ValueError(
@@ -323,10 +326,6 @@ class CommonConfig:
                 "Expected http, https, ws, or wss"
             )
 
-        if not self.target_rpc_url:
-            raise ValueError("Target RPC URL is required (TARGET_RPC_URL)")
-
-            # Validate RPC URL
         if not self.target_rpc_url:
             raise ValueError("Target RPC URL is required (TARGET_RPC_URL)")
 
@@ -459,6 +458,7 @@ class OracleConfig:
             request_timeout=request_timeout,
             retry_count=retry_count,
             target_contract_address=target_contract_address,
+            min_reporter_balance=float(os.environ.get("MIN_REPORTER_BALANCE", "0.001")),
         )
 
         # Determine oracle mode from environment
@@ -571,6 +571,10 @@ class OracleConfig:
                 token_addresses=token_addresses,
                 recipient_addresses=recipient_addresses,
                 scan_interval=int(os.environ.get("SCAN_INTERVAL", "5")),
+                max_blocks_per_scan=int(os.environ.get("MAX_BLOCKS_PER_SCAN", "10")),
+                heartbeat_interval_seconds=int(
+                    os.environ.get("HEARTBEAT_INTERVAL_SECONDS", "3600")
+                ),
             )
 
         # Load oracle-level config
@@ -605,6 +609,7 @@ class OracleConfig:
             f"  Request Timeout: {self.common_config.request_timeout} seconds"
         )
         logger.info(f"  Retry Count: {self.common_config.retry_count}")
+        logger.info(f"  Min Reporter Balance: {self.common_config.min_reporter_balance} native tokens")
 
         if self.oracle_mode == OracleMode.EVENT_LISTENER:
             assert isinstance(self.mode_config, EventListenerModeConfig)
@@ -656,6 +661,9 @@ class OracleConfig:
                 f"  Scan Interval: {self.mode_config.scan_interval} seconds"
             )
             logger.info(
+                f"  Max Blocks Per Scan: {self.mode_config.max_blocks_per_scan}"
+            )
+            logger.info(
                 "  Mode: Real-time (scans all new blocks since last check)"
             )
             logger.info(
@@ -696,6 +704,7 @@ class OracleConfig:
             request_timeout=self.common_config.request_timeout,
             retry_count=self.common_config.retry_count,
             target_contract_address=self.common_config.target_contract_address,
+            min_reporter_balance=self.common_config.min_reporter_balance,
         )
 
         return OracleConfig(

@@ -1,50 +1,66 @@
+# Multi-chain ROFL Header Oracle configuration
+# Each service monitors a different source chain and reports to the same ROFLAdapter
+
+x-oracle-common: &oracle-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: ghcr.io/oasisprotocol/rofl-header-oracle:multichain
+  platform: linux/amd64
+  restart: on-failure
+  volumes:
+    - /run/rofl-appd.sock:/run/rofl-appd.sock
+
+x-common-env: &common-env
+  PYTHONUNBUFFERED: 1
+  TARGET_RPC_URL: ${TARGET_RPC_URL}
+  ROFL_ADAPTER_ADDRESS: ${ROFL_ADAPTER_ADDRESS}
+  REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-30}
+  RETRY_COUNT: ${RETRY_COUNT:-3}
+  MIN_REPORTER_BALANCE: ${MIN_REPORTER_BALANCE}
+  ORACLE_MODE: ${ORACLE_MODE}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  JSON_LOGS: ${JSON_LOGS:-false}
+
 services:
-  header-oracle:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: ghcr.io/oasisprotocol/rofl-header-oracle:latest
-    platform: linux/amd64
-    container_name: rofl_header_oracle
+  # Base Chain Oracle (Chain ID: 8453)
+  oracle-base:
+    <<: *oracle-common
+    container_name: rofl_oracle_base
     ports:
-      - "8080:8080"  # Health check endpoint
+      - "8080:8080"
     environment:
-      # Python configuration
-      PYTHONUNBUFFERED: 1  # Disable output buffering for immediate log visibility
+      <<: *common-env
+      SOURCE_RPC_URL: ${BASE_SOURCE_RPC_URL}
+      TOKEN_ADDRESSES: ${BASE_TOKEN_ADDRESSES}
+      RECIPIENT_ADDRESSES: ${BASE_RECIPIENT_ADDRESSES}
+      MAX_BLOCKS_PER_SCAN: ${BASE_MAX_BLOCKS_PER_SCAN}
+      SCAN_INTERVAL: ${BASE_SCAN_INTERVAL}
 
-      # Common configuration (all modes)
-      SOURCE_RPC_URL: ${SOURCE_RPC_URL}
-      TARGET_RPC_URL: ${TARGET_RPC_URL}
-      ROFL_ADAPTER_ADDRESS: ${ROFL_ADAPTER_ADDRESS}  # Required - ROFLAdapter contract address
-      REQUEST_TIMEOUT: ${REQUEST_TIMEOUT}  # HTTP request timeout in seconds
-      RETRY_COUNT: ${RETRY_COUNT}  # Number of retry attempts
+  # Ethereum Oracle (Chain ID: 1)
+  oracle-eth:
+    <<: *oracle-common
+    container_name: rofl_oracle_eth
+    ports:
+      - "8081:8080"
+    environment:
+      <<: *common-env
+      SOURCE_RPC_URL: ${ETH_SOURCE_RPC_URL}
+      TOKEN_ADDRESSES: ${ETH_TOKEN_ADDRESSES}
+      RECIPIENT_ADDRESSES: ${ETH_RECIPIENT_ADDRESSES}
+      MAX_BLOCKS_PER_SCAN: ${ETH_MAX_BLOCKS_PER_SCAN}
+      SCAN_INTERVAL: ${ETH_SCAN_INTERVAL}
 
-      # Oracle mode: event_listener, push, watcher, or token_watcher
-      ORACLE_MODE: ${ORACLE_MODE:-event_listener}
-
-      # Logging configuration
-      LOG_LEVEL: ${LOG_LEVEL}  # DEBUG, INFO, WARNING, ERROR, CRITICAL
-      JSON_LOGS: ${JSON_LOGS}  # Enable JSON-formatted structured logging
-
-      # Event Listener Mode Configuration (ORACLE_MODE=event_listener)
-      SOURCE_CONTRACT_ADDRESS: ${SOURCE_CONTRACT_ADDRESS}  # Required for event_listener mode
-      POLLING_INTERVAL: ${POLLING_INTERVAL}  # Seconds between event checks
-      LOOKBACK_BLOCKS: ${LOOKBACK_BLOCKS}  # Blocks to look back on startup
-
-      # Push Mode Configuration (ORACLE_MODE=push)
-      PUSH_INTERVAL: ${PUSH_INTERVAL}  # Seconds between block pushes
-      PUSH_BATCH_SIZE: ${PUSH_BATCH_SIZE}  # Max blocks to push per iteration
-
-      # Watcher Mode Configuration (ORACLE_MODE=watcher)
-      WATCH_ADDRESSES: ${WATCH_ADDRESSES:-}  # Required for watcher mode - comma-separated addresses
-      SCAN_INTERVAL: ${SCAN_INTERVAL}  # Seconds between scanning for interactions
-      WATCHER_BATCH_SIZE: ${WATCHER_BATCH_SIZE}  # Max blocks to scan per iteration
-      ENABLE_INTERNAL_TX_DETECTION: ${ENABLE_INTERNAL_TX_DETECTION:-false}  # Requires archive node with debug API
-
-      # Token Watcher Mode Configuration (ORACLE_MODE=token_watcher)
-      TOKEN_ADDRESSES: ${TOKEN_ADDRESSES:-}  # Required for token_watcher mode - comma-separated token contract addresses
-      RECIPIENT_ADDRESSES: ${RECIPIENT_ADDRESSES:-}  # Required for token_watcher mode - comma-separated recipient addresses
-
-    restart: on-failure
-    volumes:
-      - /run/rofl-appd.sock:/run/rofl-appd.sock
+  # Arbitrum Oracle (Chain ID: 42161)
+  oracle-arb:
+    <<: *oracle-common
+    container_name: rofl_oracle_arb
+    ports:
+      - "8082:8080"
+    environment:
+      <<: *common-env
+      SOURCE_RPC_URL: ${ARB_SOURCE_RPC_URL}
+      TOKEN_ADDRESSES: ${ARB_TOKEN_ADDRESSES}
+      RECIPIENT_ADDRESSES: ${ARB_RECIPIENT_ADDRESSES}
+      MAX_BLOCKS_PER_SCAN: ${ARB_MAX_BLOCKS_PER_SCAN}
+      SCAN_INTERVAL: ${ARB_SCAN_INTERVAL}

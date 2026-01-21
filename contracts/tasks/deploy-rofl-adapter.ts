@@ -25,14 +25,8 @@ export const deployRoflAdapter = task("deploy:rofl-adapter", "Deploy the ROFLAda
   .addOption({
     name: "roflAppId",
     description: "ROFL app ID in bech32 format (e.g., rofl1qrct2u3sap98mx462lzwy7za86ajgaaxkvs79x88)",
-    defaultValue: "rofl1qz5h592w87uyftlrht388g3rkf58s5z7n53w5xh0", // mainnet
-    // defaultValue: "rofl1qrct2u3sap98mx462lzwy7za86ajgaaxkvs79x88", // testnet
-  })
-  .addOption({
-    name: "sourceChainId",
-    description: "Chain ID of the source chain (e.g., 11155111 for Sepolia)",
-    defaultValue: "8453", // base
-    // defaultValue: "11155111", // sepolia
+    // defaultValue: "rofl1qz5h592w87uyftlrht388g3rkf58s5z7n53w5xh0", // mainnet
+    defaultValue: "rofl1qrct2u3sap98mx462lzwy7za86ajgaaxkvs79x88", // testnet
   })
   .addFlag({
     name: "verify",
@@ -47,19 +41,9 @@ export const deployRoflAdapter = task("deploy:rofl-adapter", "Deploy the ROFLAda
         throw new Error("ROFL app ID is required. Use --rofl-app-id <bech32-id>");
       }
 
-      if (!taskArgs.sourceChainId) {
-        throw new Error("Source chain ID is required. Use --source-chain-id <number>");
-      }
-
-      const sourceChainId = parseInt(taskArgs.sourceChainId, 10);
-      if (isNaN(sourceChainId)) {
-        throw new Error(`Invalid source chain ID: ${taskArgs.sourceChainId}`);
-      }
-
-      console.log("Deploying ROFLAdapter...");
+      console.log("Deploying ROFLAdapter (multi-chain)...");
       console.log("Network:", networkName);
       console.log("ROFL App ID:", taskArgs.roflAppId);
-      console.log("Source Chain ID:", sourceChainId);
 
       // Decode the bech32 ROFL app ID to bytes21
       const rawAppId = decodeRoflAppId(taskArgs.roflAppId);
@@ -73,7 +57,7 @@ export const deployRoflAdapter = task("deploy:rofl-adapter", "Deploy the ROFLAda
       console.log("Account balance:", ethers.formatEther(balance), "ETH");
 
       const ROFLAdapter = await ethers.getContractFactory("ROFLAdapter");
-      const constructorArgs = [rawAppId, sourceChainId] as const;
+      const constructorArgs = [rawAppId] as const;
 
       const roflAdapter = await ROFLAdapter.deploy(...constructorArgs);
 
@@ -92,7 +76,7 @@ export const deployRoflAdapter = task("deploy:rofl-adapter", "Deploy the ROFLAda
           // Hardhat 3 verify task (attempts Etherscan, Blockscout)
           await hre.run("verify", {
             address: contractAddress,
-            constructorArgs: `${bytes21AppId} ${sourceChainId}`,
+            constructorArgs: `${bytes21AppId}`,
           });
           console.log("Contract verified successfully!");
         } catch (error: any) {
@@ -103,7 +87,7 @@ export const deployRoflAdapter = task("deploy:rofl-adapter", "Deploy the ROFLAda
             console.log("\nFor Oasis Sapphire, verify manually via Sourcify:");
             console.log(`  npx @sourcify/cli verify ${contractAddress} --chain-id 23295`);
             console.log("\nOr use Hardhat:");
-            console.log(`  bun hardhat verify --network ${networkName} ${contractAddress} "${bytes21AppId}" ${sourceChainId}`);
+            console.log(`  bun hardhat verify --network ${networkName} ${contractAddress} "${bytes21AppId}"`);
           }
         }
       } else if (taskArgs.verify) {
@@ -115,12 +99,13 @@ export const deployRoflAdapter = task("deploy:rofl-adapter", "Deploy the ROFLAda
       console.log("Contract Address:", contractAddress);
       console.log("ROFL App ID (bech32):", taskArgs.roflAppId);
       console.log("ROFL App ID (bytes21):", bytes21AppId);
-      console.log("Source Chain ID:", sourceChainId);
       console.log("Deployer:", deployer.address);
       console.log("Block Number:", await ethers.provider.getBlockNumber());
       console.log("==========================");
       console.log("\nNote: This adapter must be deployed on Oasis Sapphire to use ROFL functionality.");
-      console.log("After deployment, call setReporter() from your ROFL app to authorize the reporter address.\n");
+      console.log("After deployment, the ROFL oracle will automatically:");
+      console.log("  1. Call setReporter() to authorize the reporter address");
+      console.log("  2. Call addSupportedChain() to register each source chain\n");
 
       await saveDeploymentInfo(
         "ROFLAdapter",
@@ -129,7 +114,7 @@ export const deployRoflAdapter = task("deploy:rofl-adapter", "Deploy the ROFLAda
         ethers,
         {
           transactionHash: roflAdapter.deploymentTransaction()?.hash,
-          constructorArgs: [bytes21AppId, sourceChainId],
+          constructorArgs: [bytes21AppId],
         }
       );
 

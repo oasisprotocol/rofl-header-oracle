@@ -9,6 +9,7 @@ resources:
     kind: disk-persistent
     size: 1000
 artifacts:
+  builder: ghcr.io/oasisprotocol/rofl-container-builder:0.0.1@sha256:913ef97ab07dde31f08ce873f825bf3d4f32ad4102ff5797d7c3050c121c4dce
   firmware: https://github.com/oasisprotocol/oasis-boot/releases/download/v0.6.2/ovmf.tdx.fd#db47100a7d6a0c1f6983be224137c3f8d7cb09b63bb1c7a5ee7829d8e994a42f
   kernel: https://github.com/oasisprotocol/oasis-boot/releases/download/v0.6.2/stage1.bin#e5d4d654ca1fa2c388bf64b23fc6e67815893fc7cb8b7cfee253d87963f54973
   stage2: https://github.com/oasisprotocol/oasis-boot/releases/download/v0.6.2/stage2-podman.tar.bz2#b2ea2a0ca769b6b2d64e3f0c577ee9c08f0bb81a6e33ed5b15b2a7e50ef9a09f
@@ -32,8 +33,8 @@ deployments:
           min_tcb_evaluation_data_number: 18
           tdx: {}
       enclaves:
-        - id: 47YJdKGT4gRY5UvJEiv3Y/u/SAaS+7Dw8plcH/xntV4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
-        - id: mbii+uP+Xqyf1xl72lJ0m1/GHcE418NeWWkTbXDDpAsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
+        - id: QpXrk8wO7H+djPYpZLvYyEmSiHE3jWyTcrZwoiP3xR4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
+        - id: hMk1b+eElQiBA2sXUaPKtvGY/5cLV/h/leF7+m2ebTMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
       endorsements:
         - any: {}
       fees: endorsing_node
@@ -42,31 +43,65 @@ deployments:
       - name: ENABLE_INTERNAL_TX_DETECTION
         value: pGJwa1ggk7KPIsfxOTlkY/JgSrT2St+srjsvapD4mkzFauo+fRdkbmFtZVgsS5M1T3fwHcV9i5BZDEeaT6zhObtWj/VU4Ix2svHnyJ81aoS40zLDC/XquUZlbm9uY2VPKdKGk8AqhrJcafGT229jZXZhbHVlVafQZn9qGFWcNzxLmo88tcn8jxWzWQ==
       - name: JSON_LOGS
-        value: pGJwa1ggzHmwyRNNcgKjjexA1E7VygpEExKOtXzDg0Wa5+acTnZkbmFtZVgZB55Jsvv6Jr6Mn+xvGMp1QYczfDRyZ7Uu8GVub25jZU9CXDWuX/OBgk0vZLzpnxJldmFsdWVV9PHLlI8QHogIlg5BXW7HN53D+CPS
+        value: pGJwa1gg5wQwqVlXFGEvZSRT89O0oMmlmyk9NfagglcCtTOJmRtkbmFtZVgZNUrNozHjjglIQb01Sp7nv78CwQew/XxEaGVub25jZU8IL/xYOd0XyurwNqc2PJtldmFsdWVV9gVpJSKJf7r7q0P6IhC5uOr12jNK
       - name: LOG_LEVEL
-        value: pGJwa1ggC3PoxrjwrdjjEa3hBBM/1df+CeaU55zKoNbPqtGykjZkbmFtZVgZXeP52bWz/NYUDZCx9ZlwLrCI2T+Dt7iQTWVub25jZU+1rNIcpCxoVirE9Ach2hpldmFsdWVUzUPRVi4a1WYgtzQ5rkXN/L5CWQY=
+        value: pGJwa1gg8LmW6L9TRQfJi1+0elMsdrKrHHhLTJNqsxyzm6PlTQ9kbmFtZVgZlMihWURSowI5D4cFW3Y8hz9pGSTA408MtmVub25jZU8OHzMJsqwogN7xpWi35fNldmFsdWVUFplO3/EG4RSdq+pf/5wjkgqGSuk=
       - name: LOOKBACK_BLOCKS
         value: pGJwa1gg45kGrmd+Tdv0BhQBeeuJ2WvkUdP68S7Fjav7FOisJBtkbmFtZVgfK+yFlLgRnycTSTsZWc0xC4JV/SbdCILj9urgt2fSTGVub25jZU96ItbiIpDbXnTCZR1nSF5ldmFsdWVREoXW9O6Nlku/8qQyDkFJSMY=
       - name: ORACLE_MODE
-        value: pGJwa1ggfXQs0d0eB0cZhEG0ctDAL0jZhfIclPAFtsz6iLJJGnpkbmFtZVgbdPRxl3TWlkd9HesGKg3TXFXdfd54fG4bqcVLZW5vbmNlT7MYNSrElCAXGRKGIInqK2V2YWx1ZVcgKhDazH6z9VPuTs6tROTXrO3Pqeo0UQ==
+        value: pGJwa1ggsc0R0L77DVUT7BdahgCNSWSQf8Na8/nIn0waevMFBxxkbmFtZVgbRX1OUFOwhPnxD2DZhdkqvrKiAf4s2c877v7rZW5vbmNlTzSxW3hZxTccoExGP5xCtWV2YWx1ZVgdL2ZJtBGNYroM9xADmJowcD0dt9z2qo/Px+OUp/w=
       - name: REQUEST_TIMEOUT
-        value: pGJwa1ggvT5icjVaRr1I/ACekONMltplpylNn90OB1gQB5jTyQpkbmFtZVgfNVa8sEWZR5G6UvIf89zmsgJICcCnv5GJkdOXivY752Vub25jZU8vcQmNPfD9793FgIGpPvBldmFsdWVSOPOXTZG8NI2s2O/tb086S2J7
+        value: pGJwa1ggH2Qd+Xt9N2xqZ8gxVRnXfmwzwkoVW8EFkvh/tlM9kiVkbmFtZVgfXSL1yeeKr11GdP318AcmkGRbL1PZEM6ZbNu7EuCae2Vub25jZU8zZdu/22Kl68ZlE45MUcZldmFsdWVSfyBuWi5BYjOD9qByejF3+LzA
       - name: RETRY_COUNT
-        value: pGJwa1ggWsQ0rDhTg7yJygE1Tai4k9RgfrkXJxdwwBPhaCk03j5kbmFtZVgbzcHhLCdCu0tq2JRJDJ2uzM+6neIqHrNRPnRnZW5vbmNlTwIfTafuMVF5mGcT2JQ7UmV2YWx1ZVFnWh7KARGIyT8kk0X9CRWnLQ==
+        value: pGJwa1gg46LwxdPfqzL9s8rA4PskNz2rvAOU6cgdn8R7FGobI3JkbmFtZVgbyMriaT732ypuFBHbrfywD2I6E2BOcmK23LsgZW5vbmNlT0EEYVFiouLuanzqekRUt2V2YWx1ZVHvYNIbOdwVnO4UV1bskdsb8Q==
       - name: ROFL_ADAPTER_ADDRESS
-        value: pGJwa1ggmQbQpe53XKCSCUGu8YDRAquQiXrOg9Ig/Wfex89++RVkbmFtZVgk8W2oNqB5S9YLCxzh6PUvrYNZttU/jEOITT0BNND1qKKbuDZfZW5vbmNlT1pN1NPbzo1EUjL30B9eVmV2YWx1ZVg60rp66OXmYj8TrejJ1SMV4reBiltpzqN0gCvInj05C+5v/kTxtgzjcazvKIYzGwwKmX9iVp7zKxJM1w==
+        value: pGJwa1gg80t5QrwJmFNW4foYAVw+yGkAkKFSxqN4uLhyKrJ14QdkbmFtZVgkVp0dFzlmU761F/j813nVvZDm+xkdc2V1A7fL8SAaHh/PZD7iZW5vbmNlTz3PB92AEzbTTYNh8dJEK2V2YWx1ZVg6Ax4qVVgZHsVzbbIzSa0VpKHKafdrPPlQ/yammdJ2W8gg8EuP1Syjw5XyPTJeEqLlG59MubVYprSp+Q==
       - name: SCAN_INTERVAL
         value: pGJwa1ggAAqxCmS4DLcc8Q8nilt0DHhGGKrJelT2Squ1Lu24LAhkbmFtZVgds7BZ7nyL4KGzhAtL+fHOHujrRNZjOb4iN23PF9Zlbm9uY2VPUEhz+WfBbn1HJkwcsVWuZXZhbHVlUkPDS+/sTvmAJx6h+tpn2Dq5rQ==
       - name: SOURCE_RPC_URL
         value: pGJwa1gg0My+HGbGtvLIJ8e9r6VrEqc7TClTEKWtKhFXo9tCljxkbmFtZVgeQkkoOlv07LS78RP3Kzd/bQCyC7+/HUg4YcHxMoueZW5vbmNlT6SeYcf2KAo5mRa5hL+TQWV2YWx1ZVhWVJ69/WY333tehDyi8LGBxkANzsoHzEC6DoWp8ETl+qm8ZiZLzriOjwkdmx0ZLnm8qUC7+CojVTXVw8jKyUAYdGJEsIy9D4sIHz9MnDvCdQnIauIk0C8=
       - name: TARGET_RPC_URL
-        value: pGJwa1ggfznY/mDYqJ9xwryNqBdRYzajW4/NmTBtVDfvVu0cGypkbmFtZVgeRPAJtHyXcIZFg60fhL9yldG4r6uUMGTqJXH905PSZW5vbmNlT0MeKeQYd7kgDSRNO58q5mV2YWx1ZVgpE52YefI30MF8DWM/VFAsVCwznJq2gJndbMW0SqrsSvQvp/UzZRWlC/U=
+        value: pGJwa1ggkZ7qndAePhNTPefRl7xQuWpm7QsNf9gdoFIRiRUbvQNkbmFtZVgeoxDFFELTf2w7HLS4LXyhZqwN6INoygEVR+FgzmSnZW5vbmNlT1oj5emPuXU7trEDUOuR2WV2YWx1ZVgpcNmyJ2qx8Ca27lzh8/XMpIoyXAJrsHA0Gd0CdUJa302YvDgduqlgdW0=
       - name: WATCHER_BATCH_SIZE
         value: pGJwa1ggNMYXQVK2cU8NMwCdMt3aPklR0ewiwF5hhsTrAuoiKG5kbmFtZVgi2OGAAev1bjY4l40NZMAfxp2DGvlurXZVmpK93HxcwI0EEGVub25jZU9S/SPrStTmTNxvErfrBwhldmFsdWVS2F87LYCvd21wRCwzukL+TK2Z
       - name: WATCH_ADDRESSES
         value: pGJwa1ggnFJoaPX8iHlldespD8/6JvjqA0Eao3+WzpKaB8jKdWlkbmFtZVgfQX/PI6ED+ZhkTVlU9n9p83+NJagfBRk7IqDIOtXWAmVub25jZU8L+rdkWLUUVJmMz3uIRH9ldmFsdWVYOq9t+Z1h7BIEU71gFXuguXMrcNDQlqgCDBubIDnYTQBU3YVOG/CjRzEH+GwkZkABmEp4uJcJkG7mgt0=
+      - name: ARB_MAX_BLOCKS_PER_SCAN
+        value: pGJwa1ggz9BvuXXaxvxnre5SqRCUDoQtuK5arFHAoYP81s3kuzVkbmFtZVgnk3ctblcqYDjqPiX53r5A4H0zM5lsdbyieHcjsPD50CT/FKOMntx0ZW5vbmNlT8QfQaMqJNMpxDA3/wasS2V2YWx1ZVO5IuUBPmCGSM4x3KNI7bL2RLKm
+      - name: ARB_RECIPIENT_ADDRESSES
+        value: pGJwa1ggU2YXT3xo1A9jo5huYpoRkW/AfLmMdov39gQL3v+SEFdkbmFtZVgnHA0KCCOXvBV+kwLt0PWNQXaw67hxl8gTM8gpjdwe0QD9oD+JD6WlZW5vbmNlT/y0N6BMpHi8fr906kCp1GV2YWx1ZVg6O2izpjhGGAowgPOfUVA59NpXFgGQd4jgtCS0KAa0QVZwuIk5sbksWt52gEJeLgEljQXTebuqUFAWNg==
+      - name: ARB_SCAN_INTERVAL
+        value: pGJwa1ggiIFKDow9/pDPfuReJNCbUWxL85n25vQ079Sja3WE2y1kbmFtZVghzoxHfv8b9QZNmzCfiKVQF4st7ccKrP8YWi/LqktI2yEMZW5vbmNlT2uccCwuyqOqZVBrd+Ixb2V2YWx1ZVGJArSPw6ODVH0Xa7KD7NhxcQ==
+      - name: ARB_SOURCE_RPC_URL
+        value: pGJwa1ggLOb7EPISUpBFl1BxRxkskk9eSFxdBDji9X2W/VgCX2FkbmFtZVgiURtCLUJlUaSnX8TDSCyogv0582K5EkfBisfmsFcfld5hH2Vub25jZU/r7Gh2AjYxQJx90FBeNspldmFsdWVYSo32IBHtb2rXl6ueKKSCIe4Ug+Y+jxtx5rC0WUa1ABMxT+8RLt7KTQeKFuSK5lS+SPbqzAWRm0vnTFy7Jq2U5FDyVYnuDN5XO3/b
+      - name: ARB_TOKEN_ADDRESSES
+        value: pGJwa1ggFekf+KOa5a7NcDtDwOcSLmEQD/AVRMbqhCguyBP+g1FkbmFtZVgjCaa8w/7LgC1UHwP9B0BRVfgOFce4v8oebkLVViyFqO3yQTZlbm9uY2VPhQncwVhDGW8Ob1YvxdOvZXZhbHVlWGV4Fcq2ZnRmuQed35iBA+7cJOx0RTS1EekIHeEBmYJwqINpWzJQAqA+dInVEVLjYGSvk3E/TdJ5li9wxcCcq/9XZiN3ppmwMBF7S7O/VTtfj/pOAeciPE6nOYG57p3ZTFj/HdowZA==
+      - name: BASE_MAX_BLOCKS_PER_SCAN
+        value: pGJwa1ggkMV/KevP46/xQdjKCQSPRjzLhlnbNOOL/Wu4jSFSE1FkbmFtZVgoLJPIngKP2cVwR58qiCeLp9nU3mbdI+DRGGsSifGGtC0hWFnxnrsn/GVub25jZU8JHUBLGBAH5X79pxiTnKhldmFsdWVT7usDpAvd6eI4ExYc2dwPUjB/DA==
+      - name: BASE_RECIPIENT_ADDRESSES
+        value: pGJwa1gga2ABkJWKdgu14BRUQtGtoHHaA6kozbd3dBnL+n5uylFkbmFtZVgoGD+YlJdRf3d75XlFPWXMYfiQYJY2N9qOwhHXica7CJNnM3AebpMOt2Vub25jZU8Hu1t2FCIzcBDvuZ3eAiZldmFsdWVYOs8NqkXAcKbamMwJXSS+772kREoVKkM/+fHs8UDBx4qzF42a4qz8liEFWIytU0FmPhUFow1AVY9NxKw=
+      - name: BASE_SCAN_INTERVAL
+        value: pGJwa1gg17i4/ddo7KobQ3CVHYP4p52b82Z/8h1LSn0hZ2anXF1kbmFtZVgiDj53EOfm+nIQfvHV1XeaWQpAcU5Fd7w0FmOe7jOJxm92nGVub25jZU8ah4k05pz+zSvQXNKuyM9ldmFsdWVRGc/vwq5yBmw5sxkU5W+GXjU=
+      - name: BASE_SOURCE_RPC_URL
+        value: pGJwa1ggwCRyEgWBb3ICAaTyizcunB5D1jymjG6kqWXsuYBW2h1kbmFtZVgjsv39MItl0MSAASRSYh0zjhHNR0rohMN0w75lRjT/5jjPHyBlbm9uY2VPyRw4FnRLpaqnb/zY/lTTZXZhbHVlWEutRE3M4YJQVVcCFe6DqOvGAcspZk52Tl9jVa/l8whw1bxxo2hA1b+XevwlknRteou166awi+zmociFug2nx1SnL4a9yVrjlHQ9nbA=
+      - name: BASE_TOKEN_ADDRESSES
+        value: pGJwa1ggUgVVEiO+g74A5ideEcL5LbpCYGzt3WhwHVd1CMQix2RkbmFtZVgkBX7Jh5D69VUsKt6h2uaxkP2OhYo3BOuassdNcYsl3bTLvRvfZW5vbmNlTz/MraY/W0I/JwFcyYEFJmV2YWx1ZVhlreYszP3yt/y+NAiDc/JjkOt7kcksjrI4H/VFzKZHocv6IfHPdVGeWsUA5WCeRXB6JmN6zjUCB1YYmx/zonerC79B3exka6YexLtDnz2v1IIWmedHXyn7bciCdRkmkXbTzhOU1HQ=
+      - name: ETH_MAX_BLOCKS_PER_SCAN
+        value: pGJwa1ggIqrRhVofPeM8TPK9vHJULqibneSaUJDLjPTxX2VnBmxkbmFtZVgnfjI7UC1obB+VtSsBqMSOUCWaoN+YGWKpwTdeUns6FHljWVgUmuIsZW5vbmNlTy7EKv6cmXljR8xClJAO/GV2YWx1ZVM+W1aQO90SAAeBj668CMKkayv/
+      - name: ETH_RECIPIENT_ADDRESSES
+        value: pGJwa1gg/AsbQVKmdjLqvsyabVa9xfYoXKovtvOqqgIk7yEyUA1kbmFtZVgnn7WiNYcKZq+qVEcP7n26guXwR7lfoC6ZLhErxszbEPRzerwOkfv3ZW5vbmNlT9Hi375FxbBaZG5ZIIdVkGV2YWx1ZVg6vRZHmTXYywwjyh2adTOmDf+WE2cOaDgIVDOeauz0vphcU6WRkleWnTjpmBan7ELsEb+8bVLTDpS+3g==
+      - name: ETH_SCAN_INTERVAL
+        value: pGJwa1gg3bQTN7xyffPKjn8vDgnodFb7r/NwRkN7WBNwdlwj3AVkbmFtZVghrcN41WI/97XsXLrXs+DgL4IjM7v4aio9epVCV+iCY2GoZW5vbmNlT16tZYpE0thi5szw3khhWGV2YWx1ZVJQEmzsGtHtaAU9ss53R/E2wxo=
+      - name: ETH_SOURCE_RPC_URL
+        value: pGJwa1ggb0uwRZPQsBiT9GSz898zmquxSSkix41m4q2YlsRa1l5kbmFtZVgixsbM3VW5wUmNv/L8yCkAz/IN8nWbkZRAXV7UYDjV7DdlJWVub25jZU8fntvzaoj34Q4ZWo/nA6BldmFsdWVYSoU1KOmA7ItAfzTZycf23vmLu1pxjrLQYJwzUvMeTVp8nFzTYlr/8MiF2vCxA3C7DF15EXArnDJy9W+zo/kGmDGrZH+7keBccK6r
+      - name: ETH_TOKEN_ADDRESSES
+        value: pGJwa1ggFg6SpmMCoefvBF/ExK3hy91vZrELSzVDmrzhLGiDNDxkbmFtZVgjrd0SAKUnQXBhhZ5b/qlBg+sVdlzccPOIZxuq8a8dXk+CGSVlbm9uY2VPWIeP0uX1mKiSBkl87eiPZXZhbHVlWGV9+yw7gL0AtjhWxWxYFhNCvqdlyTPTT23JxG0+n4YjtaePbjwwdUgHROPGIOvOVck3t+1DRm0yoE/CExE6P80ldO+48p6MPhOSPHEd8yX1riJuN/SqoaRvEXXzI57jhuc3f2Zv2g==
+      - name: MIN_REPORTER_BALANCE
+        value: pGJwa1ggZddfzeZVvOSOVuvTY8DfL4HhzZKIThKLGJI92aOFx0RkbmFtZVgk3T8jHDDZH4hXaZm9Nj1mk1CXTsptPHRWjXLrObbeEzS034DfZW5vbmNlT4DRrXrwUVo+/c7EER0MbmV2YWx1ZVHw9UVsMHBuhSmeYW5nMU+4yg==
     machines:
       default:
         provider: oasis1qzc8pldvm8vm3duvdrj63wgvkw34y9ucfcxzetqr
         offer: medium
-        id: 000000000000006a
+        id: 000000000000007a
+tooling:
+  version: 0.18.1
