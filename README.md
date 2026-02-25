@@ -18,6 +18,21 @@ work as part of a Hashi-based cross-chain bridge system.
 - **ROFL Runtime**: Uses Oasis confidential compute for secure oracle operations
 - **Event-Driven**: Processes `BlockHeaderRequested` events in real-time
 
+## Oracle Modes
+
+The oracle supports four operating modes, configured via `ORACLE_MODE`:
+
+| Mode | Use When | How It Works |
+|------|----------|-------------|
+| `event_listener` | A `BlockHeaderRequester` contract exists on the source chain and emits requests for specific block headers | Polls for `BlockHeaderRequested` events and submits only the requested headers |
+| `push` | You need continuous, unconditional block header availability on Sapphire (e.g., for a bridge that may need any recent header) | Pushes the latest block headers at a fixed interval, regardless of demand |
+| `watcher` | You want headers only for blocks where specific addresses have on-chain activity (transactions to/from) | Scans blocks for interactions with watched addresses and submits only those block headers. Supports optional internal transaction detection via `debug_traceTransaction` |
+| `token_watcher` | You want headers only for blocks containing ERC-20 transfers to specific recipients (e.g., bridge deposit addresses) | Monitors `Transfer` events on configured token contracts filtered by recipient addresses, and submits headers for blocks with matching transfers |
+
+The `watcher` and `token_watcher` modes include a **heartbeat
+mechanism** that periodically stores a checkpoint block header even
+when no activity is detected, bounding sync time on oracle restart.
+
 ## Requirements
 
 - Docker and Docker Compose
@@ -33,9 +48,9 @@ The oracle is configured through environment variables defined in `compose.yaml`
 
 ### Environment Variables
 
-The oracle supports three modes: **event_listener**, **push**, and
-**watcher**. Some environment variables are required for all modes, while
-others are specific to a mode.
+The oracle supports four modes: **event_listener**, **push**, **watcher**,
+and **token_watcher**. Some environment variables are required for all
+modes, while others are specific to a mode.
 
 #### **Common Variables (All Modes)**
 
@@ -47,9 +62,10 @@ others are specific to a mode.
 | `ROFL_ADAPTER_ADDRESS` | Address of the ROFLAdapter contract on Oasis Sapphire    | -                                    | **Yes**  |
 | `REQUEST_TIMEOUT`      | HTTP request timeout (seconds)                           | `30`                                 | No       |
 | `RETRY_COUNT`          | Number of retry attempts for operations                  | `3`                                  | No       |
-| `ORACLE_MODE`          | Operating mode: `event_listener`, `push`, or `watcher`   | `event_listener`                     | No       |
+| `ORACLE_MODE`          | Operating mode (see [Oracle Modes](#oracle-modes))       | `event_listener`                     | No       |
 | `LOG_LEVEL`            | Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL     | `INFO`                               | No       |
 | `JSON_LOGS`            | Enable JSON-formatted structured logging                 | `false`                              | No       |
+| `MIN_REPORTER_BALANCE` | Minimum reporter balance in native tokens before startup | `0.001`                              | No       |
 
 ---
 
@@ -81,6 +97,7 @@ others are specific to a mode.
 | `WATCHER_BATCH_SIZE`            | Max blocks to scan per iteration                    | `50`    | No       |
 | `LOOKBACK_BLOCKS`               | Number of blocks to look back on startup            | `100`   | No       |
 | `ENABLE_INTERNAL_TX_DETECTION`  | Enable internal transaction detection               | `false` | No       |
+| `HEARTBEAT_INTERVAL_SECONDS`    | Seconds between heartbeat checkpoint submissions    | `3600`  | No       |
 
 **Internal Transaction Detection:**
 
@@ -97,6 +114,18 @@ that occur via internal transactions (contract-to-contract calls). This feature:
 
 Without this feature, only direct (external) transactions to/from watched
 addresses are detected.
+
+---
+
+#### **Token Watcher Mode (`ORACLE_MODE=token_watcher`)**
+
+| Variable                     | Description                                              | Default | Required |
+|------------------------------|----------------------------------------------------------|---------|----------|
+| `TOKEN_ADDRESSES`            | Comma-separated list of ERC-20 token contract addresses  | -       | **Yes**  |
+| `RECIPIENT_ADDRESSES`        | Comma-separated list of recipient addresses to watch     | -       | **Yes**  |
+| `SCAN_INTERVAL`              | Seconds between scanning for token transfers             | `5`     | No       |
+| `MAX_BLOCKS_PER_SCAN`        | Max blocks to scan per iteration                         | `10`    | No       |
+| `HEARTBEAT_INTERVAL_SECONDS` | Seconds between heartbeat checkpoint submissions         | `3600`  | No       |
 
 ---
 
